@@ -3,15 +3,12 @@ import pandas as pd
 
 st.title("Sistema Crivo")
 
-# Substitua pela URL real da sua planilha
-sheet_url = "https://docs.google.com/spreadsheets/d/1VF1FPqUy2tZrqwFPuJ0SlWVdPLKm6gBn3yu0IctJK44/edit?gid=0#gid=0"
+# COLE AQUI O LINK QUE O GOOGLE TE DEU APÓS "PUBLICAR NA WEB"
+sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=0&single=true&output=csv" 
 
 try:
-    # Este formato exporta a planilha como CSV, sem precisar de chaves
-    url = sheet_url.replace("/edit#gid=", "/export?format=csv&gid=")
-    df = pd.read_csv(url)
-    
-    st.success("Conexão estabelecida!")
-    st.write(df.head())
+    df = pd.read_csv(sheet_url)
+    st.success("Dados carregados com sucesso!")
+    st.dataframe(df) # Isso mostra a tabela organizada
 except Exception as e:
-    st.error(f"Erro na conexão: {e}")
+    st.error(f"Erro ao ler os dados: {e}")
