@@ -8,65 +8,121 @@ import pytz
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
 
-# 2. FUSO HORÁRIO E FUNÇÕES
+# 2. FUSO HORÁRIO DE BRASÍLIA
 fuso_bruta = pytz.timezone('America/Sao_Paulo')
-def obter_agora(): return datetime.now(fuso_bruta)
 
+def obter_agora():
+    return datetime.now(fuso_bruta)
+
+# FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO DO APP
 def tratar_nome_curto(nome_completo):
-    if not nome_completo or pd.isna(nome_completo): return ""
+    if not nome_completo or pd.isna(nome_completo):
+        return ""
     partes = str(nome_completo).strip().split()
-    return f"{partes[0]} {partes[1]}" if len(partes) > 1 else partes[0]
+    if len(partes) > 1:
+        return f"{partes[0]} {partes[1]}"
+    return partes[0]
 
-# 3. CONEXÃO E ESTILO VISUAL (CSS)
+# 3. CONEXÃO COM GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-st.markdown("""
-    <style>
-    /* Estilo de Cartões (Cards) */
-    .stApp { background-color: #f8f9fa; }
-    .card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-        border-left: 5px solid #002147;
-    }
-    .stButton button { width: 100%; border-radius: 8px; font-weight: bold; }
-    </style>
-""", unsafe_allow_html=True)
+def get_data(aba, ttl_sec=2):
+    return conn.read(worksheet=aba, ttl=ttl_sec)
 
-# LÓGICA DE DADOS (Mantida exatamente como estava)
-def get_data(aba, ttl_sec=2): return conn.read(worksheet=aba, ttl=ttl_sec)
 try:
     df_escalacao = get_data("Escalacao", ttl_sec=300)
 except:
-    st.error("Conectando ao banco de dados..."); time.sleep(1); st.rerun()
+    st.error("Conectando ao banco de dados... Aguarde.")
+    time.sleep(1)
+    st.rerun()
 
+# --- MAPEAMENTO CASE-INSENSITIVE DAS COLUNAS DA ESCALAÇÃO ---
 colunas_reais = {str(col).strip().lower(): col for col in df_escalacao.columns}
-c_av1_email, c_av1_nome = colunas_reais.get('email_avaliador_1'), colunas_reais.get('avaliador_1')
-c_av2_email, c_av2_nome = colunas_reais.get('email_avaliador_2'), colunas_reais.get('avaliador_2')
-c_sup_email, c_sup_nome = colunas_reais.get('email_suplente'), colunas_reais.get('avaliador_suplente')
-c_ori_email, c_ori_nome = colunas_reais.get('email_orientador'), colunas_reais.get('orientador')
-c_turma, c_titulo, c_data, c_horario = colunas_reais.get('turma'), colunas_reais.get('titulo'), colunas_reais.get('data'), colunas_reais.get('horario')
-c_aptidao_col, c_assinatura_col = colunas_reais.get('aptidão defesa'), colunas_reais.get('assinatura orientador')
-c_aluno1, c_aluno2, c_aluno3, c_aluno4, c_aluno5 = colunas_reais.get('aluno_1'), colunas_reais.get('aluno_2'), colunas_reais.get('aluno_3'), colunas_reais.get('aluno_4'), colunas_reais.get('aluno_5')
 
+c_av1_email = colunas_reais.get('email_avaliador_1')
+c_av1_nome = colunas_reais.get('avaliador_1')
+c_av2_email = colunas_reais.get('email_avaliador_2')
+c_av2_nome = colunas_reais.get('avaliador_2')
+c_sup_email = colunas_reais.get('email_suplente')
+c_sup_nome = colunas_reais.get('avaliador_suplente')
+c_ori_email = colunas_reais.get('email_orientador')
+c_ori_nome = colunas_reais.get('orientador')
+c_turma = colunas_reais.get('turma')
+c_titulo = colunas_reais.get('titulo')
+c_data = colunas_reais.get('data')
+c_horario = colunas_reais.get('horario')
+
+# COLUNAS REAIS DA PLANILHA PARA SALVAR O FECHAMENTO DE APTIDÃO
+c_aptidao_col = colunas_reais.get('aptidão defesa')
+c_assinatura_col = colunas_reais.get('assinatura orientador')
+
+# MAPEAMENTO DAS COLUNAS SEPARADAS DE ALUNOS
+c_aluno1 = colunas_reais.get('aluno_1')
+c_aluno2 = colunas_reais.get('aluno_2')
+c_aluno3 = colunas_reais.get('aluno_3')
+c_aluno4 = colunas_reais.get('aluno_4')
+c_aluno5 = colunas_reais.get('aluno_5')
+
+# FUNÇÃO AUXILIAR PARA CHECAR SE O EMAIL EXISTE NA COLUNA MAPEADA
 def verificar_presenca_email(email, coluna_real):
-    if not coluna_real: return False
+    if not coluna_real:
+        return False
     return email in df_escalacao[coluna_real].astype(str).str.strip().str.lower().unique()
 
-# [LÓGICA DE LOGIN E PAPEIS - MANTIDA IGUAL]
+# --- TRATAMENTO SEGURO DA ABA DE RESPOSTAS ---
+colunas_respostas_obrigatorias = ["Avaliador", "Email_Avaliador", "Alunos", "Nota_Final", "Papel", "Data_Hora"]
+try:
+    df_respostas = get_data("Respostas", ttl_sec=0)
+    if df_respostas.empty or not all(col in df_respostas.columns for col in colunas_respostas_obrigatorias):
+        df_respostas = pd.DataFrame(columns=colunas_respostas_obrigatorias)
+except:
+    df_respostas = pd.DataFrame(columns=colunas_respostas_obrigatorias)
+
+# --- TRAVA DE LOGOUT E IDENTIFICAÇÃO DE PAPEL ---
 if 'email' not in st.session_state:
-    if "user" in st.query_params: st.session_state.email = st.query_params["user"]
+    if "user" in st.query_params:
+        st.session_state.email = st.query_params["user"]
+
 if 'email' not in st.session_state:
-    st.title("🎓 CRIVO"); st.subheader("Sistema de Gestão de Bancas Acadêmicas")
-    email_raw = st.text_input("E-mail cadastrado:").strip()
+    st.markdown("""
+        <style>
+        header {visibility: hidden !important;}
+        #MainMenu {visibility: hidden !important;}
+        footer {visibility: hidden;}
+        .stButton button {
+            width: 100% !important;
+            border-radius: 10px !important;
+            height: 3.5em !important;
+            background-color: #002147 !important;
+            color: white !important;
+            font-weight: bold !important;
+            border: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+    st.title("🎓 CRIVO")
+    st.subheader("Sistema de Gestão de Bancas Acadêmicas")
+    st.caption("© 2026 Desenvolvido por Wanessa Sales de Almeida")
+    st.divider()
+
+    st.write("### Identificação do Docente")
+    email_raw = st.text_input("Digite seu e-mail cadastrado:").strip()
     if st.button("Acessar Sistema"):
         if email_raw:
-            id_valido = any([verificar_presenca_email(email_raw.lower(), col) for col in [c_av1_email, c_av2_email, c_sup_email, c_ori_email]])
-            if id_valido: st.session_state.email = email_raw.lower(); st.query_params["user"] = email_limpo; st.rerun()
-            else: st.error("E-mail não autorizado.")
+            email_limpo = email_raw.lower()
+            
+            id_banca1 = verificar_presenca_email(email_limpo, c_av1_email)
+            id_banca2 = verificar_presenca_email(email_limpo, c_av2_email)
+            id_suplente = verificar_presenca_email(email_limpo, c_sup_email)
+            id_orienta = verificar_presenca_email(email_limpo, c_ori_email)
+            
+            if id_banca1 or id_banca2 or id_suplente or id_orienta:
+                st.session_state.email = email_limpo
+                st.query_params["user"] = email_limpo
+                st.rerun()
+            else:
+                st.error("E-mail não autorizado ou não encontrado na escalação.")
     st.stop()
 
 # --- DEFINIÇÃO DO PAPEL LOGADO ---
