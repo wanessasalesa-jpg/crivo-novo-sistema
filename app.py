@@ -1,38 +1,21 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
-import time
+from datetime import datetime
 
-# 1. CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
+st.set_page_config(page_title="CRIVO", layout="centered")
 
-# 2. CONFIGURAÇÃO DOS LINKS (SUBSTITUA PELOS SEUS LINKS PÚBLICOS CSV)
+# --- CONEXÃO DIRETA (SEM ERROS) ---
+# Substitua os links abaixo pelos links que você gerou em "Publicar na Web" (formato .csv)
 URL_ESCALACAO = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=0&single=true&output=csv"
 URL_RESPOSTAS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=247901801&single=true&output=csv"
 
-# 3. CARREGAMENTO DOS DADOS
-@st.cache_data(ttl=60)
-def carregar_dados():
-    df_esc = pd.read_csv(URL_ESCALACAO)
-    df_res = pd.read_csv(URL_RESPOSTAS)
-    return df_esc, df_res
-
 try:
-    df_escalacao, df_respostas = carregar_dados()
+    df_escalacao = pd.read_csv(URL_ESCALACAO)
+    df_respostas = pd.read_csv(URL_RESPOSTAS)
+    st.success("Dados carregados!")
 except Exception as e:
-    st.error(f"Erro ao carregar dados: {e}")
+    st.error(f"Erro ao carregar: {e}")
     st.stop()
-
-# --- MAPEAMENTO E LÓGICA DO SEU SISTEMA ---
-# (Aqui mantemos sua lógica original de tratamento de colunas e dados)
-colunas_reais = {str(col).strip().lower(): col for col in df_escalacao.columns}
-
-# Mapeamento simplificado das colunas principais
-c_av1_email = colunas_reais.get('email_avaliador_1')
-c_av1_nome = colunas_reais.get('avaliador_1')
-c_ori_email = colunas_reais.get('email_orientador')
-c_ori_nome = colunas_reais.get('orientador')
-c_turma = colunas_reais.get('turma')
 
 import streamlit as st
 import pandas as pd
@@ -570,6 +553,3 @@ else:
                                     st.rerun()
 
                 formulario_avaliacao(aluno_alvo_final)
-
-# Todo o restante da sua lógica de rubricas, formulários e exibição 
-# funcionará normalmente, pois o df_escalacao e df_respostas já estarão carregados.
