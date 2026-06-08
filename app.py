@@ -4,7 +4,7 @@ import pandas as pd
 st.title("Sistema Crivo")
 
 # Substitua pela URL real da sua planilha
-sheet_url = "COLE_AQUI_A_URL_DA_SUA_PLANILHA"
+sheet_url = "https://docs.google.com/spreadsheets/d/1VF1FPqUy2tZrqwFPuJ0SlWVdPLKm6gBn3yu0IctJK44/edit?gid=0#gid=0"
 
 try:
     # Este formato exporta a planilha como CSV, sem precisar de chaves
