@@ -2,58 +2,26 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-st.set_page_config(page_title="CRIVO", layout="centered")
-
-# --- CONEXÃO DIRETA (SEM ERROS) ---
-# Substitua os links abaixo pelos links que você gerou em "Publicar na Web" (formato .csv)
-URL_ESCALACAO = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=0&single=true&output=csv"
-URL_RESPOSTAS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=247901801&single=true&output=csv"
-
-try:
-    df_escalacao = pd.read_csv(URL_ESCALACAO)
-    df_respostas = pd.read_csv(URL_RESPOSTAS)
-    st.success("Dados carregados!")
-except Exception as e:
-    st.error(f"Erro ao carregar: {e}")
-    st.stop()
-
-import streamlit as st
-import pandas as pd
-from streamlit_gsheets import GSheetsConnection
-from datetime import datetime, timedelta
-import time
-import pytz 
-
-# 1. CONFIGURAÇÃO DA PÁGINA
+# 1. CONFIGURAÇÃO
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
 
-# 2. FUSO HORÁRIO DE BRASÍLIA
-fuso_bruta = pytz.timezone('America/Sao_Paulo')
+# URLS PÚBLICAS (Substitua pelos seus links reais do "Publicar na Web" -> .csv)
+URL_ESCALACAO = "COLE_AQUI_O_LINK_CSV_DA_ESCALACAO"
+URL_RESPOSTAS = "COLE_AQUI_O_LINK_CSV_DAS_RESPOSTAS"
 
-def obter_agora():
-    return datetime.now(fuso_bruta)
-
-# FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO DO APP
-def tratar_nome_curto(nome_completo):
-    if not nome_completo or pd.isna(nome_completo):
-        return ""
-    partes = str(nome_completo).strip().split()
-    if len(partes) > 1:
-        return f"{partes[0]} {partes[1]}"
-    return partes[0]
-
-# 3. CONEXÃO COM GOOGLE SHEETS
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def get_data(aba, ttl_sec=2):
-    return conn.read(worksheet=aba, ttl=ttl_sec)
+# 2. CARREGAMENTO (Simples e direto)
+@st.cache_data(ttl=60)
+def carregar_dados():
+    df_esc = pd.read_csv(https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=0&single=true&output=csv)
+    df_res = pd.read_csv(https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=247901801&single=true&output=csv)
+    return df_esc, df_res
 
 try:
-    df_escalacao = get_data("Escalacao", ttl_sec=300)
-except:
-    st.error("Conectando ao banco de dados... Aguarde.")
-    time.sleep(1)
-    st.rerun()
+    df_escalacao, df_respostas = carregar_dados()
+    st.success("Conexão estável!")
+except Exception as e:
+    st.error(f"Erro ao conectar: {e}")
+    st.stop()
 
 # --- MAPEAMENTO CASE-INSENSITIVE DAS COLUNAS DA ESCALAÇÃO ---
 colunas_reais = {str(col).strip().lower(): col for col in df_escalacao.columns}
