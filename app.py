@@ -1,45 +1,18 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
+from datetime import datetime, timedelta
 import time
+import pytz 
 
-# 1. CONFIGURAÇÃO E VISUAL
+# 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
 
-st.markdown("""
-    <style>
-    header {visibility: hidden !important;}
-    #MainMenu {visibility: hidden !important;}
-    footer {visibility: hidden;}
-    .stButton button { width: 100% !important; border-radius: 10px !important; height: 3.5em !important; background-color: #002147 !important; color: white !important; font-weight: bold !important; border: none !important; }
-    .bloco-cabecalho { background-color: #002147 !important; padding: 25px !important; border-radius: 12px !important; color: white !important; margin-bottom: 25px !important; box-shadow: 0px 4px 10px rgba(0,0,0,0.1) !important; }
-    </style>
-    """, unsafe_allow_html=True)
+# 2. FUSO HORÁRIO DE BRASÍLIA
+fuso_bruta = pytz.timezone('America/Sao_Paulo')
 
-# 2. CONEXÃO (LINK PÚBLICO CSV)
-URL_ESCALACAO = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=0&single=true&output=csv"
-URL_RESPOSTAS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZzhsxc2ZwS8Gph7GeKo-OOtLfSkCo9UkhY6CdtzlZQxqE7aI8AQZ-nLwARbT3AYt8f/pub?gid=247901801&single=true&output=csv"
-
-@st.cache_data(ttl=60)
-def carregar_dados():
-    return pd.read_csv(URL_ESCALACAO), pd.read_csv(URL_RESPOSTAS)
-
-df_escalacao, df_respostas = carregar_dados()
-
-# 3. CABEÇALHO
-st.markdown("""
-    <div class="bloco-cabecalho">
-        <h1>🎓 CRIVO</h1>
-        <h3>Sistema de Gestão de Bancas Acadêmicas</h3>
-    </div>
-    """, unsafe_allow_html=True)
-
-# 4. FUNÇÃO DE HORA (SUBSTITUI O PYTZ)
 def obter_agora():
-    return datetime.now()
-
-
-
+    return datetime.now(fuso_bruta)
 
 # FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO DO APP
 def tratar_nome_curto(nome_completo):
@@ -51,6 +24,7 @@ def tratar_nome_curto(nome_completo):
     return partes[0]
 
 # 3. CONEXÃO COM GOOGLE SHEETS
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data(aba, ttl_sec=2):
     return conn.read(worksheet=aba, ttl=ttl_sec)
@@ -560,6 +534,3 @@ else:
                                     st.rerun()
 
                 formulario_avaliacao(aluno_alvo_final)
-
-# IMPORTANTE: Remova qualquer linha que tenha 'conn = st.connection...' 
-# ou 'from streamlit_gsheets import...' pois elas causam o erro que você está vendo.
