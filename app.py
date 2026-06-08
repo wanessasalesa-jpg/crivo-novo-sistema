@@ -52,7 +52,7 @@ c_titulo = colunas_reais.get('titulo')
 c_data = colunas_reais.get('data')
 c_horario = colunas_reais.get('horario')
 
-# COLUNAS REAIS DA PLANILHA PARA SALVAR O FECHAMENTO DE APTIDÃO (IMAGEM 07643f.png)
+# COLUNAS REAIS DA PLANILHA PARA SALVAR O FECHAMENTO DE APTIDÃO
 c_aptidao_col = colunas_reais.get('aptidão defesa')
 c_assinatura_col = colunas_reais.get('assinatura orientador')
 
@@ -384,12 +384,10 @@ else:
                                     st.cache_data.clear()
                                     df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
                                     
-                                    # --- CORREÇÃO ADICIONADA AQUI PARA EVITAR ERRO DE FLOAT64 ---
                                     if c_aptidao_col in df_atualizar_linha.columns:
                                         df_atualizar_linha[c_aptidao_col] = df_atualizar_linha[c_aptidao_col].astype(object)
                                     if c_assinatura_col in df_atualizar_linha.columns:
                                         df_atualizar_linha[c_assinatura_col] = df_atualizar_linha[c_assinatura_col].astype(object)
-                                    # ------------------------------------------------------------
                                     
                                     # Grava direto nas colunas R e S que você criou na planilha
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
@@ -470,7 +468,7 @@ else:
                                 "Introdução": (5, "Contextualização do tema e problema de pesquisa."),
                                 "Justificativa": (5, "Importância do trabalho e contribuição científica."),
                                 "Objetivos": (5, "Objetivo geral e específicos mensuráveis."),
-                                "Metodologia": (10, "Desenho do estudo, critérios e ética."),
+                                "Metodologia": (10, "Desenho do estudo, criteria e ética."),
                                 "Referências": (1, "Uso de normas ABNT/Vancouver."),
                                 "Apresentação Oral": (10, "Domínio de conteúdo, postura e clareza."),
                                 "Coerência": (10, "Lógica entre introdução, objetivos e métodos."),
@@ -499,7 +497,12 @@ else:
                     
                     notas = {}
                     for item, (p, help_t) in rubrica.items():
-                        notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
+                        # Se o critério valer apenas 1 ponto, permite notas quebradas (0.0, 0.5, 1.0)
+                        if p == 1:
+                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
+                        # Para os outros critérios, mantém a nota inteira normal
+                        else:
+                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
 
                     total = sum(notas.values())
                     st.markdown(f"## Nota Atribuída: {total} / {v_max}")
