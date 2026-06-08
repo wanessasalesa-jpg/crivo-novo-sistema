@@ -384,7 +384,14 @@ else:
                                     st.cache_data.clear()
                                     df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
                                     
-                                    # Grava direto nas colunas R e S que você criou na planilha (Imagem 07643f.png)
+                                    # --- CORREÇÃO ADICIONADA AQUI PARA EVITAR ERRO DE FLOAT64 ---
+                                    if c_aptidao_col in df_atualizar_linha.columns:
+                                        df_atualizar_linha[c_aptidao_col] = df_atualizar_linha[c_aptidao_col].astype(object)
+                                    if c_assinatura_col in df_atualizar_linha.columns:
+                                        df_atualizar_linha[c_assinatura_col] = df_atualizar_linha[c_assinatura_col].astype(object)
+                                    # ------------------------------------------------------------
+                                    
+                                    # Grava direto nas colunas R e S que você criou na planilha
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
                                     
