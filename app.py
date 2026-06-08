@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
+import time
 
 # 1. CONFIGURAÇÃO E VISUAL
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
 
-# --- CSS (IDENTIDADE VISUAL) ---
 st.markdown("""
     <style>
     header {visibility: hidden !important;}
@@ -23,11 +24,7 @@ URL_RESPOSTAS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66dKuSdRkQiZz
 def carregar_dados():
     return pd.read_csv(URL_ESCALACAO), pd.read_csv(URL_RESPOSTAS)
 
-try:
-    df_escalacao, df_respostas = carregar_dados()
-except Exception as e:
-    st.error(f"Erro ao carregar: {e}")
-    st.stop()
+df_escalacao, df_respostas = carregar_dados()
 
 # 3. CABEÇALHO
 st.markdown("""
@@ -37,32 +34,13 @@ st.markdown("""
     </div>
     """, unsafe_allow_html=True)
 
-# 4. VALIDAÇÃO DE ACESSO (LOGÍN SIMPLIFICADO)
-if 'email' not in st.session_state:
-    st.write("### Identificação do Docente")
-    email_input = st.text_input("Digite seu e-mail:").strip().lower()
-    
-    if st.button("Acessar"):
-        # Verifica em TODAS as colunas que podem conter e-mail
-        encontrou = False
-        for col in df_escalacao.columns:
-            if 'email' in col.lower():
-                if email_input in df_escalacao[col].astype(str).str.lower().values:
-                    encontrou = True
-                    break
-        
-        if encontrou:
-            st.session_state.email = email_input
-            st.rerun()
-        else:
-            st.error("E-mail não encontrado na planilha.")
-    st.stop()
-
-# 5. O SISTEMA (SE LOGADO)
-st.success(f"Bem-vindo, {st.session_state.email}")
+# 4. FUNÇÃO DE HORA (SUBSTITUI O PYTZ)
 def obter_agora():
-    # Retorna a data e hora atual do servidor
     return datetime.now()
+
+
+
+
 # FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO DO APP
 def tratar_nome_curto(nome_completo):
     if not nome_completo or pd.isna(nome_completo):
@@ -73,7 +51,6 @@ def tratar_nome_curto(nome_completo):
     return partes[0]
 
 # 3. CONEXÃO COM GOOGLE SHEETS
-conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data(aba, ttl_sec=2):
     return conn.read(worksheet=aba, ttl=ttl_sec)
@@ -584,3 +561,5 @@ else:
 
                 formulario_avaliacao(aluno_alvo_final)
 
+# IMPORTANTE: Remova qualquer linha que tenha 'conn = st.connection...' 
+# ou 'from streamlit_gsheets import...' pois elas causam o erro que você está vendo.
