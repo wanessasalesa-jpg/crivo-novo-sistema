@@ -421,9 +421,9 @@ else:
                                 "Texto - Justificativa do Estudo": (6, "Apresenta com clareza a relevância científica, social ou profissional; bem estruturada e relacionada ao problema."),
                                 "Texto - Objetivo Geral e Específicos": (6, "Objetivo geral claro, coerente com a justificativa; objetivos específicos bem formulados e articulados."),
                                 "Texto - Fundamentação Teórica / Referências": (6, "Referencial teórico relevante, atualizado (últimos 5 anos em sua maioria) e articulado ao tema."),
-                                "Texto - Metodologia Proposta": (6, "Método bem descrito, adequado aos objetivos, com definição de tipo de estudo, população e análise."),
-                                "Texto - Cronograma de Execução": (3, "Cronograma bem estruturado, com etapas claras e prazos viáveis."),
-                                "Texto - Estrutura, Linguagem e Formatação": (3, "Texto bem escrito, estruturado, sem erros relevantes; segue as normas (ABNT ou Vancouver)."),
+                                "Texto - Metodologia Proposta": (10, "Método bem descrito, adequado aos objetivos, com definição de tipo de estudo, população e análise."),
+                                "Texto - Cronograma de Execução": (1, "Cronograma bem estruturado, com etapas claras e prazos viáveis."),
+                                "Texto - Estrutura, Linguagem e Formatação": (6, "Texto bem escrito, estruturado, sem erros relevantes; segue as normas (ABNT ou Vancouver)."),
                                 "Relatório - Relatório de Pesquisa": (10, "Apreciação técnica do orientador sobre o documento final de consolidação dos dados compilados pelo discente.")
                             }
                         elif "TCC I" in turma_bruta or "TCC 1" in turma_bruta:
