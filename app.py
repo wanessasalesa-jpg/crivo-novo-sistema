@@ -14,14 +14,20 @@ fuso_bruta = pytz.timezone('America/Sao_Paulo')
 def obter_agora():
     return datetime.now(fuso_bruta)
 
-# FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO DO APP
+# FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO DO APP (AGORA IGNORA PREPOSIÇÕES)
 def tratar_nome_curto(nome_completo):
     if not nome_completo or pd.isna(nome_completo):
         return ""
     partes = str(nome_completo).strip().split()
-    if len(partes) > 1:
-        return f"{partes[0]} {partes[1]}"
-    return partes[0]
+    if len(partes) == 1:
+        return partes[0]
+    
+    # Ignora preposições para não cortar o nome pela metade
+    preposicoes = ['de', 'da', 'do', 'das', 'dos', 'e']
+    if partes[1].lower() in preposicoes and len(partes) > 2:
+        return f"{partes[0]} {partes[1]} {partes[2]}"
+        
+    return f"{partes[0]} {partes[1]}"
 
 # 3. CONEXÃO COM GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -135,7 +141,6 @@ tem_papel_sup = verificar_presenca_email(email_user, c_sup_email)
 tem_papel_banca = tem_papel_av1 or tem_papel_av2 or tem_papel_sup
 
 if "perfil_ativo" not in st.session_state:
-    # CORREÇÃO AQUI: Se tiver perfil duplo, prioriza a Banca como tela inicial
     if tem_papel_banca:
         st.session_state.perfil_ativo = "Banca"
     else:
@@ -233,11 +238,9 @@ if not df_escalacao.empty:
             alunos_grupo = obter_lista_alunos_linha(row)
             turma_check = str(row[c_turma]).strip().upper() if c_turma else ""
             
-            # Checa se o orientador já lançou as notas de cada aluno individualmente
             avaliados = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
             alunos_restantes = [a for a in alunos_grupo if a not in avaliados]
             
-            # LÓGICA DE ETAPA: Se for TCC II e já avaliou todos os alunos, mas NÃO preencheu a aptidão na planilha ainda, continua pendente para a tela seguinte!
             ja_preencheu_aptidao = pd.notna(row.get(c_aptidao_col)) and str(row.get(c_aptidao_col)).strip() != "" if c_aptidao_col else False
             precisa_tela_aptidao = ("TCC II" in turma_check or "TCC 2" in turma_check) and not ja_preencheu_aptidao
             
@@ -315,7 +318,6 @@ else:
         alunos_reais_lista = obter_lista_alunos_linha(dados)
         string_grupo_completo = ", ".join(alunos_reais_lista)
         
-        # Identifica o índice da linha na planilha real para atualizações diretas
         linha_index_planilha = dados.name + 2 
         
         banca_liberada = True
@@ -324,7 +326,7 @@ else:
         if not eh_orientador:
             try:
                 val_data = str(dados[c_data]).strip() if c_data else ""
-                val_horario = str(dados[c_horario]).strip() if c_horario else ""
+                val_horario = str(dados[c_horario]).strip().lower().replace("h", ":") if c_horario else ""
                 data_banca = datetime.strptime(val_data, "%d/%m/%Y").date()
                 horario_banca = datetime.strptime(val_horario, "%H:%M").time()
                 dt_banca_completa = fuso_bruta.localize(datetime.combine(data_banca, horario_banca))
@@ -341,7 +343,8 @@ else:
         with st.expander("📖 Informações do Trabalho", expanded=True):
             st.write(f"**Turma:** {turma_bruta}")
             st.write(f"**Título:** {dados[c_titulo] if c_titulo else ''}")
-            st.write(f"**Orientador:** {tratar_nome_curto(dados[c_ori_nome]) if c_ori_nome else ''}")
+            # MODIFICAÇÃO: O orientador agora aparece com o nome completo
+            st.write(f"**Orientador:** {str(dados[c_ori_nome]).strip() if c_ori_nome and pd.notna(dados[c_ori_nome]) else ''}")
             st.write(f"**Integrantes do Grupo:** {string_grupo_completo}")
             st.write(f"**Data/Horário Cadastrado:** {dados[c_data] if c_data else ''} às {dados[c_horario] if c_horario else ''}")
 
@@ -357,15 +360,18 @@ else:
                     exibir_formulario_notas = False
                     st.warning("⚠️ Nota do orientador não aplicável para esta turma. A turma MCM V possui 100% da nota final atribuída exclusivamente pela banca examinadora.")
                 else:
-                    # Filtra quais alunos deste grupo já ganharam nota do Orientador
                     avaliados_na_aba = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
                     lista_alunos_individuais = [a for a in alunos_reais_lista if a not in avaliados_na_aba]
                     
                     if lista_alunos_individuais:
-                        aluno_alvo_final = st.selectbox("👤 Selecione o Aluno para atribuir a nota individual:", lista_alunos_individuais)
+                        # MODIFICAÇÃO: format_func aplica o nome curto apenas visualmente, sem quebrar a lógica de gravação
+                        aluno_alvo_final = st.selectbox(
+                            "👤 Selecione o Aluno para atribuir a nota individual:", 
+                            lista_alunos_individuais, 
+                            format_func=tratar_nome_curto
+                        )
                     else:
                         exibir_formulario_notas = False
-                        # SEGUNDA TELA ATIVADA: Se for TCC II e as notas individuais acabaram, abre o fechamento!
                         if "TCC II" in turma_bruta or "TCC 2" in turma_bruta:
                             exibir_tela_aptidao_final = True
                         else:
@@ -408,7 +414,6 @@ else:
                                     if c_assinatura_col in df_atualizar_linha.columns:
                                         df_atualizar_linha[c_assinatura_col] = df_atualizar_linha[c_assinatura_col].astype(object)
                                     
-                                    # Grava direto nas colunas R e S que você criou na planilha
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
                                     
@@ -427,7 +432,8 @@ else:
                 rubrica = {}
                 
                 if eh_orientador:
-                    st.info(f"🌱 Avaliando individualmente o discente: **{aluno_para_salvar}**")
+                    # MODIFICAÇÃO: Exibe o nome formatado na mensagem de info
+                    st.info(f"🌱 Avaliando individualmente o discente: **{tratar_nome_curto(aluno_para_salvar)}**")
                     
                     if "MCM IV" in turma_bruta or "MCM 4" in turma_bruta:
                         rubrica = {
@@ -486,7 +492,7 @@ else:
                             "Metodologia": (5, "Execução real do método proposto."),
                             "Resultados": (5, "Apresentação clara dos dados obtidos."),
                             "Discussão": (10, "Capacidade crítica de comparar resultados."),
-                            "Referências": (1, "Referências conforme ABNT."),
+                            "Referências": (1, "Rigor técnico nas citações e bibliografia."),
                             "Apresentação Oral": (10, "Segurança na defesa dos resultados."),
                             "Coerência": (10, "União lógica de todas as partes do trabalho."),
                             "Qualidade Visual": (9, "Profissionalismo na apresentação visual."),
@@ -513,10 +519,8 @@ else:
                     
                     notas = {}
                     for item, (p, help_t) in rubrica.items():
-                        # Se o critério valer apenas 1 ponto, permite notas quebradas (0.0, 0.5, 1.0)
                         if p == 1:
                             notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
-                        # Para os outros critérios, mantém a nota inteira normal
                         else:
                             notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
 
