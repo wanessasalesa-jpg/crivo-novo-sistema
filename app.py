@@ -23,8 +23,16 @@ def tratar_nome_curto(nome_completo):
         return f"{partes[0]} {partes[1]}"
     return partes[0]
 
-# 3. CONEXÃO COM GOOGLE SHEETS
+# 3. CONEXÃO COM GOOGLE SHEETS E ESTILO VISUAL
 conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Estilo visual para organizar em Cartões (Cards)
+st.markdown("""
+    <style>
+    .card { background-color: #ffffff; padding: 20px; border-radius: 15px; border: 1px solid #e1e4e8; margin-bottom: 15px; }
+    .stButton button { border-radius: 10px !important; font-weight: bold; }
+    </style>
+""", unsafe_allow_html=True)
 
 def get_data(aba, ttl_sec=2):
     return conn.read(worksheet=aba, ttl=ttl_sec)
@@ -125,24 +133,34 @@ if 'email' not in st.session_state:
                 st.error("E-mail não autorizado ou não encontrado na escalação.")
     st.stop()
 
-# --- DEFINIÇÃO DO PAPEL LOGADO ---
+# --- DEFINIÇÃO DO PAPEL LOGADO (COM LÓGICA DE PERFIL DUPLO) ---
 email_user = st.session_state.email
-eh_orientador = False
-eh_banca = False
-nome_completo_docente = ""
 
-if verificar_presenca_email(email_user, c_ori_email):
-    eh_orientador = True
+tem_papel_ori = verificar_presenca_email(email_user, c_ori_email)
+tem_papel_av1 = verificar_presenca_email(email_user, c_av1_email)
+tem_papel_av2 = verificar_presenca_email(email_user, c_av2_email)
+tem_papel_sup = verificar_presenca_email(email_user, c_sup_email)
+tem_papel_banca = tem_papel_av1 or tem_papel_av2 or tem_papel_sup
+
+if "perfil_ativo" not in st.session_state:
+    if tem_papel_ori:
+        st.session_state.perfil_ativo = "Orientador"
+    else:
+        st.session_state.perfil_ativo = "Banca"
+
+eh_orientador = (st.session_state.perfil_ativo == "Orientador")
+eh_banca = not eh_orientador
+
+nome_completo_docente = ""
+if eh_orientador and tem_papel_ori:
     nome_completo_docente = df_escalacao[df_escalacao[c_ori_email].astype(str).str.lower() == email_user][c_ori_nome].iloc[0]
-elif verificar_presenca_email(email_user, c_av1_email):
-    eh_banca = True
-    nome_completo_docente = df_escalacao[df_escalacao[c_av1_email].astype(str).str.lower() == email_user][c_av1_nome].iloc[0]
-elif verificar_presenca_email(email_user, c_av2_email):
-    eh_banca = True
-    nome_completo_docente = df_escalacao[df_escalacao[c_av2_email].astype(str).str.lower() == email_user][c_av2_nome].iloc[0]
-elif verificar_presenca_email(email_user, c_sup_email):
-    eh_banca = True
-    nome_completo_docente = df_escalacao[df_escalacao[c_sup_email].astype(str).str.lower() == email_user][c_sup_nome].iloc[0]
+else:
+    if tem_papel_av1:
+        nome_completo_docente = df_escalacao[df_escalacao[c_av1_email].astype(str).str.lower() == email_user][c_av1_nome].iloc[0]
+    elif tem_papel_av2:
+        nome_completo_docente = df_escalacao[df_escalacao[c_av2_email].astype(str).str.lower() == email_user][c_av2_nome].iloc[0]
+    elif tem_papel_sup:
+        nome_completo_docente = df_escalacao[df_escalacao[c_sup_email].astype(str).str.lower() == email_user][c_sup_nome].iloc[0]
 
 nome_exibicao = tratar_nome_curto(nome_completo_docente)
 
@@ -191,6 +209,14 @@ st.markdown(f"""
         <p style="font-size: 0.85em; opacity: 0.8;">© 2026 Desenvolvido por Wanessa Sales de Almeida</p>
     </div>
     """, unsafe_allow_html=True)
+
+# --- SELETOR DE PERFIL (PAPEL DUPLO) ---
+if tem_papel_ori and tem_papel_banca:
+    st.info("🔄 **Perfil Duplo Detectado:** Você atua como Orientador e também como Avaliador de Banca.")
+    novo_perfil = st.radio("Selecione qual painel acessar agora:", ["Orientador", "Banca"], index=0 if eh_orientador else 1, horizontal=True)
+    if novo_perfil != st.session_state.perfil_ativo:
+        st.session_state.perfil_ativo = novo_perfil
+        st.rerun()
 
 # FUNÇÃO AUXILIAR PARA MONTAR A LISTA DE ALUNOS REAL DE UMA LINHA DA ESCALAÇÃO
 def obter_lista_alunos_linha(row):
@@ -389,7 +415,7 @@ else:
                                     if c_assinatura_col in df_atualizar_linha.columns:
                                         df_atualizar_linha[c_assinatura_col] = df_atualizar_linha[c_assinatura_col].astype(object)
                                     
-                                    # Grava direto nas colunas R e S que você criou na planilha
+                                    # Grava direto nas colunas R e S da planilha
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
                                     
@@ -402,145 +428,4 @@ else:
                                 except Exception as e:
                                     st.error(f"Erro ao salvar: {e}")
 
-            # --- FORMULÁRIO DE AVALIAÇÃO DE NOTAS (TELA 1) ---
-            elif exibir_formulario_notas:
-                @st.fragment
-                def formulario_avaliacao(aluno_para_salvar):
-                    rubrica = {}
-                    
-                    if eh_orientador:
-                        st.info(f"🌱 Avaliando individualmente o discente: **{aluno_para_salvar}**")
-                        
-                        if "MCM IV" in turma_bruta or "MCM 4" in turma_bruta:
-                            rubrica = {
-                                "Desenv. - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrando alta responsabilidade e comprometimento no processo de elaboração."),
-                                "Desenv. - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
-                                "Desenv. - Desempenho e Cumprimento de Tarefas": (5, "Desempenho satisfatório, com activities realizadas de forma competente e engajada."),
-                                "Desenv. - Pontualidade e Compromisso": (5, "Pontualidade é mantida consistentemente, demonstrando compromisso com o processo."),
-                                "Responsabilidade com a Aprendizagem": (5, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e aprimoramento."),
-                                "Texto - Justificativa do Estudo": (6, "Apresenta com clareza a relevância científica, social ou profissional; bem estruturada e relacionada ao problema."),
-                                "Texto - Objetivo Geral e Específicos": (6, "Objetivo geral claro, coerente com a justificativa; objetivos específicos bem formulados e articulados."),
-                                "Texto - Fundamentação Teórica / Referências": (6, "Referencial teórico relevante, atualizado (últimos 5 anos em sua maioria) e articulado ao tema."),
-                                "Texto - Metodologia Proposta": (10, "Método bem descrito, adequado aos objetivos, com definição de tipo de estudo, população e análise."),
-                                "Texto - Cronograma de Execução": (1, "Cronograma bem estruturado, com etapas claras e prazos viáveis."),
-                                "Texto - Estrutura, Linguagem e Formatação": (6, "Texto bem escrito, estruturado, sem erros relevantes; segue as normas (ABNT ou Vancouver)."),
-                                "Relatório - Relatório de Pesquisa": (10, "Apreciação técnica do orientador sobre o documento final de consolidação dos dados compilados pelo discente.")
-                            }
-                        elif "TCC I" in turma_bruta or "TCC 1" in turma_bruta:
-                            rubrica = {
-                                "Discente - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrou alta responsabilidade e comprometimento no processo de elaboração do projeto."),
-                                "Discente - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
-                                "Discente - Desempenho / Cumprimento de Tarefas": (4, "Desempenho satisfatório, com atividades realizadas de forma competente e engajada."),
-                                "Discente - Pontualidade e Compromisso": (3, "Pontualidade é mantida consistentemente, demonstrando compromisso com os prazos."),
-                                "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimoramento."),
-                                "Projeto - Formulação do Problema e Justificativa": (5, "Problema de pesquisa é excepcionalmente formulado, e a justificativa é altamente persuasiva, atualizada e relevante."),
-                                "Projeto - Objetivos e Hipóteses": (4, "Objetivos são bem formulados e alinhados, e as hipóteses são pertinentes e testáveis."),
-                                "Projeto - Revisão de Literatura": (4, "Revisão de literatura é abrangente, crítica e identifica claramente a relevância do estudo na literatura existente."),
-                                "Projeto - Metodologia e ABNT": (4, "Metodologia é detalhada e abrangente, proporcionando uma compreensão completa; projeto formatado conforme ABNT."),
-                                "Projeto - Considerações Éticas e Viabilidade": (3, "Considerações éticas são discutidas de maneira apropriada, e a viabilidade do estudo é abordada.")
-                            }
-                        elif "TCC II" in turma_bruta or "TCC 2" in turma_bruta:
-                            rubrica = {
-                                "Discente - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrou alta responsabilidade e comprometimento no processo de elaboração do artigo."),
-                                "Discente - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
-                                "Discente - Desempenho / Cumprimento de Tarefas": (4, "Desempenho satisfatório, com atividades realizadas de forma competente e engajada."),
-                                "Discente - Pontualidade e Compromisso": (3, "Pontualidade é mantida consistentemente, o que demonstra compromisso com o processo."),
-                                "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimoramento."),
-                                "Artigo - Estruturação e Escrita Científica": (5, "Estrutura adequada, com fluidez, concisão e excelência na redação científica."),
-                                "Artigo - Fundamentação e Atualização Bibliográfica": (4, "Fundamentação crítica, bem estruturada e com autores atuais e pertinentes à área médica."),
-                                "Artigo - Apresentação e Discussão dos Resultados": (4, "Resultados apresentados com clareza, com discussão crítica e integração aos achados da literatura."),
-                                "Artigo - Rigor Metodológico": (4, "Métodos bem descritos, compatíveis com o delineamento e objetivos do estudo."),
-                                "Artigo - Conclusão e Relevância Científica": (3, "Conclusão clara, alinhada aos objetivos e resultados, com destaque à relevância científica e aplicabilidade prática.")
-                            }
-                    else:
-                        st.info("🎓 Você está visualizando a Rubrica de Avaliação da Banca (Nota para o Grupo todo).")
-                        
-                        if "MCM IV" in turma_bruta or "MCM 4" in turma_bruta:
-                            rubrica = {
-                                "Delineamento - Rigor Científico e Metodologia": (10, "Adequação do desenho do estudo, viabilidade técnica e delineamento claro dos procedimentos propostos."),
-                                "Apresentação Oral - Clareza e Domínio": (10, "Domínio conceitual do conteúdo exposto, postura, uso do tempo regulamentar e clareza na defesa oral."),
-                                "Coerência - Estrutura Geral do Projeto": (10, "Lógica interna do manuscrito, alinhamento fluido entre a justificativa, os objetivos e o método.")
-                            }
-                        elif "TCC I" in turma_bruta or "TCC 1" in turma_bruta:
-                            rubrica = {
-                                "Tema": (3, "Clareza, delimitação e a atualidade do tema proposto."),
-                                "Resumo": (1, "Objetivo, método, resultados esperados e palavras-chave."),
-                                "Introdução": (5, "Contextualização do tema e problema de pesquisa."),
-                                "Justificativa": (5, "Importância do trabalho e contribuição científica."),
-                                "Objetivos": (5, "Objetivo geral e específicos mensuráveis."),
-                                "Metodologia": (10, "Desenho do estudo, criteria e ética."),
-                                "Referências": (1, "Uso de normas ABNT/Vancouver."),
-                                "Apresentação Oral": (10, "Domínio de conteúdo, postura e clareza."),
-                                "Coerência": (10, "Lógica entre introdução, objetivos e métodos."),
-                                "Qualidade Visual": (9, "Organização dos slides e recursos."),
-                                "Tempo": (1, "Intervalo de 10 a 15 minutos de apresentação.")
-                            }
-                        elif "TCC II" in turma_bruta or "TCC 2" in turma_bruta or "MCM V" in turma_bruta or "MCM 5" in turma_bruta:
-                            rubrica = {
-                                "Tema/Resumo": (4, "Qualidade técnica do resumo e aderência ao tema."),
-                                "Introdução": (5, "Fundamentação teórica sólida e revisão."),
-                                "Metodologia": (5, "Execução real do método proposto."),
-                                "Resultados": (5, "Apresentação clara dos dados obtidos."),
-                                "Discussão": (10, "Capacidade crítica de comparar resultados."),
-                                "Referências": (1, "Rigor técnico nas citações e bibliografia."),
-                                "Apresentação Oral": (10, "Segurança na defesa dos resultados."),
-                                "Coerência": (10, "União lógica de todas as partes do trabalho."),
-                                "Qualidade Visual": (9, "Profissionalismo na apresentação visual."),
-                                "Tempo": (1, "Intervalo de 15 a 20 minutos de apresentação.")
-                            }
-
-                    if not rubrica:
-                        return
-
-                    v_max = sum(p for p, h in rubrica.values())
-                    st.write(f"### 📝 Critérios (Máximo: {v_max} pontos)")
-                    
-                    notas = {}
-                    for item, (p, help_t) in rubrica.items():
-                        # Se o critério valer apenas 1 ponto, permite notas quebradas (0.0, 0.5, 1.0)
-                        if p == 1:
-                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
-                        # Para os outros critérios, mantém a nota inteira normal
-                        else:
-                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
-
-                    total = sum(notas.values())
-                    st.markdown(f"## Nota Atribuída: {total} / {v_max}")
-
-                    tem_zero = any(v == 0 for v in notas.values())
-                    conf_zero = True
-                    if tem_zero:
-                        st.error("⚠️ Existem critérios com nota zero.")
-                        conf_zero = st.checkbox("Confirmo que as notas zero são intencionais.", key=f"c_zero_{aluno_para_salvar}")
-
-                    if st.button("🚀 GRAVAR AVALIAÇÃO NO SISTEMA", key=f"btn_save_{aluno_para_salvar}"):
-                        if tem_zero and not conf_zero:
-                            st.warning("Confirme as notas zero antes de gravar.")
-                        else:
-                            with st.spinner("A gravar notas e a sincronizar base de dados..."):
-                                try:
-                                    st.cache_data.clear()
-                                    df_at = conn.read(worksheet="Respostas", ttl=0)
-                                    if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
-                                        df_at = pd.DataFrame(columns=colunas_respostas_obrigatorias)
-                                    
-                                    nova_l = pd.DataFrame([{
-                                        "Avaliador": nome_completo_docente, 
-                                        "Email_Avaliador": email_user, 
-                                        "Alunos": aluno_para_salvar, 
-                                        "Nota_Final": total, 
-                                        "Papel": "Orientador" if eh_orientador else "Banca",
-                                        "Data_Hora": obter_agora().strftime("%d/%m/%Y %H:%M")
-                                    }])
-                                    df_f = pd.concat([df_at, nova_l], ignore_index=True)
-                                    conn.update(worksheet="Respostas", data=df_f)
-                                    
-                                    st.balloons()
-                                    st.success("✅ Avaliação gravada com sucesso!")
-                                    time.sleep(1.5)
-                                    st.rerun()
-                                except:
-                                    time.sleep(1)
-                                    st.rerun()
-
-                formulario_avaliacao(aluno_alvo_final)
+            # --- FORMUL
