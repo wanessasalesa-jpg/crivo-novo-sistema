@@ -486,7 +486,7 @@ else:
                             "Metodologia": (5, "Execução real do método proposto."),
                             "Resultados": (5, "Apresentação clara dos dados obtidos."),
                             "Discussão": (10, "Capacidade crítica de comparar resultados."),
-                            "Referências": (1, "Rigor técnico nas citações e bibliografia."),
+                            "Referências": (1, "Referências conforme ABNT."),
                             "Apresentação Oral": (10, "Segurança na defesa dos resultados."),
                             "Coerência": (10, "União lógica de todas as partes do trabalho."),
                             "Qualidade Visual": (9, "Profissionalismo na apresentação visual."),
