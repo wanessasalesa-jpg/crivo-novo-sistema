@@ -23,16 +23,8 @@ def tratar_nome_curto(nome_completo):
         return f"{partes[0]} {partes[1]}"
     return partes[0]
 
-# 3. CONEXÃO COM GOOGLE SHEETS E ESTILO VISUAL
+# 3. CONEXÃO COM GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
-
-# Estilo visual para organizar em Cartões (Cards)
-st.markdown("""
-    <style>
-    .card { background-color: #ffffff; padding: 20px; border-radius: 15px; border: 1px solid #e1e4e8; margin-bottom: 15px; }
-    .stButton button { border-radius: 10px !important; font-weight: bold; }
-    </style>
-""", unsafe_allow_html=True)
 
 def get_data(aba, ttl_sec=2):
     return conn.read(worksheet=aba, ttl=ttl_sec)
@@ -133,7 +125,7 @@ if 'email' not in st.session_state:
                 st.error("E-mail não autorizado ou não encontrado na escalação.")
     st.stop()
 
-# --- DEFINIÇÃO DO PAPEL LOGADO (COM LÓGICA DE PERFIL DUPLO) ---
+# --- DEFINIÇÃO DO PAPEL LOGADO ---
 email_user = st.session_state.email
 
 tem_papel_ori = verificar_presenca_email(email_user, c_ori_email)
@@ -240,9 +232,11 @@ if not df_escalacao.empty:
             alunos_grupo = obter_lista_alunos_linha(row)
             turma_check = str(row[c_turma]).strip().upper() if c_turma else ""
             
+            # Checa se o orientador já lançou as notas de cada aluno individualmente
             avaliados = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
             alunos_restantes = [a for a in alunos_grupo if a not in avaliados]
             
+            # LÓGICA DE ETAPA: Se for TCC II e já avaliou todos os alunos, mas NÃO preencheu a aptidão na planilha ainda, continua pendente para a tela seguinte!
             ja_preencheu_aptidao = pd.notna(row.get(c_aptidao_col)) and str(row.get(c_aptidao_col)).strip() != "" if c_aptidao_col else False
             precisa_tela_aptidao = ("TCC II" in turma_check or "TCC 2" in turma_check) and not ja_preencheu_aptidao
             
@@ -320,6 +314,7 @@ else:
         alunos_reais_lista = obter_lista_alunos_linha(dados)
         string_grupo_completo = ", ".join(alunos_reais_lista)
         
+        # Identifica o índice da linha na planilha real para atualizações diretas
         linha_index_planilha = dados.name + 2 
         
         banca_liberada = True
@@ -329,7 +324,6 @@ else:
             try:
                 val_data = str(dados[c_data]).strip() if c_data else ""
                 val_horario = str(dados[c_horario]).strip().lower().replace("h", ":") if c_horario else ""
-                
                 data_banca = datetime.strptime(val_data, "%d/%m/%Y").date()
                 horario_banca = datetime.strptime(val_horario, "%H:%M").time()
                 dt_banca_completa = fuso_bruta.localize(datetime.combine(data_banca, horario_banca))
@@ -340,7 +334,7 @@ else:
                 if agora < limite_liberacao:
                     banca_liberada = False
                     msg_trava = f"⏳ Esta avaliação de Banca só estará disponível a partir das {limite_liberacao.strftime('%H:%M')} do dia {data_banca.strftime('%d/%m/%Y')}."
-            except Exception as e:
+            except:
                 pass
 
         with st.expander("📖 Informações do Trabalho", expanded=True):
@@ -362,6 +356,7 @@ else:
                     exibir_formulario_notas = False
                     st.warning("⚠️ Nota do orientador não aplicável para esta turma. A turma MCM V possui 100% da nota final atribuída exclusivamente pela banca examinadora.")
                 else:
+                    # Filtra quais alunos deste grupo já ganharam nota do Orientador
                     avaliados_na_aba = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
                     lista_alunos_individuais = [a for a in alunos_reais_lista if a not in avaliados_na_aba]
                     
@@ -369,6 +364,7 @@ else:
                         aluno_alvo_final = st.selectbox("👤 Selecione o Aluno para atribuir a nota individual:", lista_alunos_individuais)
                     else:
                         exibir_formulario_notas = False
+                        # SEGUNDA TELA ATIVADA: Se for TCC II e as notas individuais acabaram, abre o fechamento!
                         if "TCC II" in turma_bruta or "TCC 2" in turma_bruta:
                             exibir_tela_aptidao_final = True
                         else:
@@ -411,6 +407,7 @@ else:
                                     if c_assinatura_col in df_atualizar_linha.columns:
                                         df_atualizar_linha[c_assinatura_col] = df_atualizar_linha[c_assinatura_col].astype(object)
                                     
+                                    # Grava direto nas colunas R e S que você criou na planilha
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
                                     
@@ -431,7 +428,6 @@ else:
                 if eh_orientador:
                     st.info(f"🌱 Avaliando individualmente o discente: **{aluno_para_salvar}**")
                     
-                    # CORREÇÃO: Ordem de leitura invertida para evitar conflito de "TCC I" dentro de "TCC II"
                     if "MCM IV" in turma_bruta or "MCM 4" in turma_bruta:
                         rubrica = {
                             "Desenv. - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrando alta responsabilidade e comprometimento no processo de elaboração."),
@@ -476,7 +472,6 @@ else:
                 else:
                     st.info("🎓 Você está visualizando a Rubrica de Avaliação da Banca (Nota para o Grupo todo).")
                     
-                    # CORREÇÃO: Ordem de leitura invertida aqui também
                     if "MCM IV" in turma_bruta or "MCM 4" in turma_bruta:
                         rubrica = {
                             "Delineamento - Rigor Científico e Metodologia": (10, "Adequação do desenho do estudo, viabilidade técnica e delineamento claro dos procedimentos propostos."),
@@ -494,7 +489,7 @@ else:
                             "Apresentação Oral": (10, "Segurança na defesa dos resultados."),
                             "Coerência": (10, "União lógica de todas as partes do trabalho."),
                             "Qualidade Visual": (9, "Profissionalismo na apresentação visual."),
-                            "Tempo": (1, "Intervalo de 15 a 20 minutos de presentation.")
+                            "Tempo": (1, "Intervalo de 15 a 20 minutos de apresentação.")
                         }
                     elif "TCC I" in turma_bruta or "TCC 1" in turma_bruta:
                         rubrica = {
@@ -517,8 +512,10 @@ else:
                     
                     notas = {}
                     for item, (p, help_t) in rubrica.items():
+                        # Se o critério valer apenas 1 ponto, permite notas quebradas (0.0, 0.5, 1.0)
                         if p == 1:
-                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, float(p), 0.0, step=0.5, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
+                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
+                        # Para os outros critérios, mantém a nota inteira normal
                         else:
                             notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
 
