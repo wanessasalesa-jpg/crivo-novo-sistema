@@ -135,10 +135,11 @@ tem_papel_sup = verificar_presenca_email(email_user, c_sup_email)
 tem_papel_banca = tem_papel_av1 or tem_papel_av2 or tem_papel_sup
 
 if "perfil_ativo" not in st.session_state:
-    if tem_papel_ori:
-        st.session_state.perfil_ativo = "Orientador"
-    else:
+    # CORREÇÃO AQUI: Se tiver perfil duplo, prioriza a Banca como tela inicial
+    if tem_papel_banca:
         st.session_state.perfil_ativo = "Banca"
+    else:
+        st.session_state.perfil_ativo = "Orientador"
 
 eh_orientador = (st.session_state.perfil_ativo == "Orientador")
 eh_banca = not eh_orientador
@@ -323,7 +324,7 @@ else:
         if not eh_orientador:
             try:
                 val_data = str(dados[c_data]).strip() if c_data else ""
-                val_horario = str(dados[c_horario]).strip().lower().replace("h", ":") if c_horario else ""
+                val_horario = str(dados[c_horario]).strip() if c_horario else ""
                 data_banca = datetime.strptime(val_data, "%d/%m/%Y").date()
                 horario_banca = datetime.strptime(val_horario, "%H:%M").time()
                 dt_banca_completa = fuso_bruta.localize(datetime.combine(data_banca, horario_banca))
