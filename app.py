@@ -328,7 +328,6 @@ else:
         if not eh_orientador:
             try:
                 val_data = str(dados[c_data]).strip() if c_data else ""
-                # Corrigido: Agora substitui "h" por ":" automaticamente (ex: "19h55" -> "19:55")
                 val_horario = str(dados[c_horario]).strip().lower().replace("h", ":") if c_horario else ""
                 
                 data_banca = datetime.strptime(val_data, "%d/%m/%Y").date()
@@ -432,6 +431,7 @@ else:
                 if eh_orientador:
                     st.info(f"🌱 Avaliando individualmente o discente: **{aluno_para_salvar}**")
                     
+                    # CORREÇÃO: Ordem de leitura invertida para evitar conflito de "TCC I" dentro de "TCC II"
                     if "MCM IV" in turma_bruta or "MCM 4" in turma_bruta:
                         rubrica = {
                             "Desenv. - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrando alta responsabilidade e comprometimento no processo de elaboração."),
@@ -447,19 +447,6 @@ else:
                             "Texto - Estrutura, Linguagem e Formatação": (6, "Texto bem escrito, estruturado, sem erros relevantes; segue as normas (ABNT ou Vancouver)."),
                             "Relatório - Relatório de Pesquisa": (10, "Apreciação técnica do orientador sobre o documento final de consolidação dos dados compilados pelo discente.")
                         }
-                    elif "TCC I" in turma_bruta or "TCC 1" in turma_bruta:
-                        rubrica = {
-                            "Discente - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrou alta responsabilidade e comprometimento no processo de elaboração do projeto."),
-                            "Discente - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
-                            "Discente - Desempenho / Cumprimento de Tarefas": (4, "Desempenho satisfatório, com atividades realizadas de forma competente e engajada."),
-                            "Discente - Pontualidade e Compromisso": (3, "Pontualidade é mantida consistentemente, demonstrando compromisso com os prazos."),
-                            "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimoramento."),
-                            "Projeto - Formulação do Problema e Justificativa": (5, "Problema de pesquisa é excepcionalmente formulado, e a justificativa é altamente persuasiva, atualizada e relevante."),
-                            "Projeto - Objetivos e Hipóteses": (4, "Objetivos são bem formulados e alinhados, e as hipóteses são pertinentes e testáveis."),
-                            "Projeto - Revisão de Literatura": (4, "Revisão de literatura é abrangente, crítica e identifica claramente a relevância do estudo na literatura existente."),
-                            "Projeto - Metodologia e ABNT": (4, "Metodologia é detalhada e abrangente, proporcionando uma compreensão completa; projeto formatado conforme ABNT."),
-                            "Projeto - Considerações Éticas e Viabilidade": (3, "Considerações éticas são discutidas de maneira apropriada, e a viabilidade do estudo é abordada.")
-                        }
                     elif "TCC II" in turma_bruta or "TCC 2" in turma_bruta:
                         rubrica = {
                             "Discente - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrou alta responsabilidade e comprometimento no processo de elaboração do artigo."),
@@ -473,14 +460,41 @@ else:
                             "Artigo - Rigor Metodológico": (4, "Métodos bem descritos, compatíveis com o delineamento e objetivos do estudo."),
                             "Artigo - Conclusão e Relevância Científica": (3, "Conclusão clara, alinhada aos objetivos e resultados, com destaque à relevância científica e aplicabilidade prática.")
                         }
+                    elif "TCC I" in turma_bruta or "TCC 1" in turma_bruta:
+                        rubrica = {
+                            "Discente - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrou alta responsabilidade e comprometimento no processo de elaboração do projeto."),
+                            "Discente - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
+                            "Discente - Desempenho / Cumprimento de Tarefas": (4, "Desempenho satisfatório, com atividades realizadas de forma competente e engajada."),
+                            "Discente - Pontualidade e Compromisso": (3, "Pontualidade é mantida consistentemente, demonstrando compromisso com os prazos."),
+                            "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimoramento."),
+                            "Projeto - Formulação do Problema e Justificativa": (5, "Problema de pesquisa é excepcionalmente formulado, e a justificativa é altamente persuasiva, atualizada e relevante."),
+                            "Projeto - Objetivos e Hipóteses": (4, "Objetivos são bem formulados e alinhados, e as hipóteses são pertinentes e testáveis."),
+                            "Projeto - Revisão de Literatura": (4, "Revisão de literatura é abrangente, crítica e identifica claramente a relevância do estudo na literatura existente."),
+                            "Projeto - Metodologia e ABNT": (4, "Metodologia é detalhada e abrangente, proporcionando uma compreensão completa; projeto formatado conforme ABNT."),
+                            "Projeto - Considerações Éticas e Viabilidade": (3, "Considerações éticas são discutidas de maneira apropriada, e a viabilidade do estudo é abordada.")
+                        }
                 else:
                     st.info("🎓 Você está visualizando a Rubrica de Avaliação da Banca (Nota para o Grupo todo).")
                     
+                    # CORREÇÃO: Ordem de leitura invertida aqui também
                     if "MCM IV" in turma_bruta or "MCM 4" in turma_bruta:
                         rubrica = {
                             "Delineamento - Rigor Científico e Metodologia": (10, "Adequação do desenho do estudo, viabilidade técnica e delineamento claro dos procedimentos propostos."),
                             "Apresentação Oral - Clareza e Domínio": (10, "Domínio conceitual do conteúdo exposto, postura, uso do tempo regulamentar e clareza na defesa oral."),
                             "Coerência - Estrutura Geral do Projeto": (10, "Lógica interna do manuscrito, alinhamento fluido entre a justificativa, os objetivos e o método.")
+                        }
+                    elif "TCC II" in turma_bruta or "TCC 2" in turma_bruta or "MCM V" in turma_bruta or "MCM 5" in turma_bruta:
+                        rubrica = {
+                            "Tema/Resumo": (4, "Qualidade técnica do resumo e aderência ao tema."),
+                            "Introdução": (5, "Fundamentação teórica sólida e revisão."),
+                            "Metodologia": (5, "Execução real do método proposto."),
+                            "Resultados": (5, "Apresentação clara dos dados obtidos."),
+                            "Discussão": (10, "Capacidade crítica de comparar resultados."),
+                            "Referências": (1, "Rigor técnico nas citações e bibliografia."),
+                            "Apresentação Oral": (10, "Segurança na defesa dos resultados."),
+                            "Coerência": (10, "União lógica de todas as partes do trabalho."),
+                            "Qualidade Visual": (9, "Profissionalismo na apresentação visual."),
+                            "Tempo": (1, "Intervalo de 15 a 20 minutos de presentation.")
                         }
                     elif "TCC I" in turma_bruta or "TCC 1" in turma_bruta:
                         rubrica = {
@@ -495,19 +509,6 @@ else:
                             "Coerência": (10, "Lógica entre introdução, objetivos e métodos."),
                             "Qualidade Visual": (9, "Organização dos slides e recursos."),
                             "Tempo": (1, "Intervalo de 10 a 15 minutos de apresentação.")
-                        }
-                    elif "TCC II" in turma_bruta or "TCC 2" in turma_bruta or "MCM V" in turma_bruta or "MCM 5" in turma_bruta:
-                        rubrica = {
-                            "Tema/Resumo": (4, "Qualidade técnica do resumo e aderência ao tema."),
-                            "Introdução": (5, "Fundamentação teórica sólida e revisão."),
-                            "Metodologia": (5, "Execução real do método proposto."),
-                            "Resultados": (5, "Apresentação clara dos dados obtidos."),
-                            "Discussão": (10, "Capacidade crítica de comparar resultados."),
-                            "Referências": (1, "Rigor técnico nas citações e bibliografia."),
-                            "Apresentação Oral": (10, "Segurança na defesa dos resultados."),
-                            "Coerência": (10, "União lógica de todas as partes do trabalho."),
-                            "Qualidade Visual": (9, "Profissionalismo na apresentação visual."),
-                            "Tempo": (1, "Intervalo de 15 a 20 minutos de apresentação.")
                         }
 
                 if rubrica:
