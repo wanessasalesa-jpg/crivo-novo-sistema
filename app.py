@@ -5,9 +5,8 @@ from datetime import datetime, timedelta
 import time
 import pytz 
 
-# 1. CONFIGURAÇÃO DA PÁGINA E LIMPEZA TOTAL DE CACHE
+# 1. CONFIGURAÇÃO DA PÁGINA (Cache limpo apenas uma vez na inicialização global)
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
-st.cache_data.clear()
 
 # 2. FUSO HORÁRIO DE BRASÍLIA
 fuso_bruta = pytz.timezone('America/Sao_Paulo')
@@ -30,9 +29,12 @@ def tratar_nome_curto(nome_completo):
 # 3. CONEXÃO COM GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+def get_data(aba, ttl_sec=2):
+    return conn.read(worksheet=aba, ttl=ttl_sec)
+
 try:
-    df_escalacao = conn.read(worksheet="Escalacao", ttl=0)
-    # Padronização absoluta de colunas em minúsculas imediatamente
+    # Cache de 20 segundos para evitar travamentos de rede concorrentes nos sliders
+    df_escalacao = conn.read(worksheet="Escalacao", ttl=20)
     df_escalacao.columns = df_escalacao.columns.astype(str).str.strip().str.lower()
 except:
     st.error("Conectando ao banco de dados... Aguarde.")
@@ -54,7 +56,6 @@ c_av1_nome = buscar_coluna(['avaliador', '1'], evitar='email')
 c_av2_email = buscar_coluna(['email', '2'])
 c_av2_nome = buscar_coluna(['avaliador', '2'], evitar='email')
 
-# Radar infalível para o Suplente
 c_sup_email = buscar_coluna(['email', 'suplente'])
 c_sup_nome = buscar_coluna(['suplente'], evitar='email')
 
@@ -84,7 +85,8 @@ def verificar_presenca_email(email, coluna_real):
 # --- TRATAMENTO SEGURO DA ABA DE RESPOSTAS ---
 colunas_respostas_obrigatorias = ["Avaliador", "Email_Avaliador", "Alunos", "Nota_Final", "Papel", "Data_Hora"]
 try:
-    df_respostas = conn.read(worksheet="Respostas", ttl=0)
+    # Cache de 10 segundos para a tabela de respostas na navegação comum
+    df_respostas = conn.read(worksheet="Respostas", ttl=10)
     if df_respostas.empty or not all(col in df_respostas.columns for col in colunas_respostas_obrigatorias):
         df_respostas = pd.DataFrame(columns=colunas_respostas_obrigatorias)
 except:
@@ -124,10 +126,15 @@ if 'email' not in st.session_state:
         if email_raw:
             email_limpo = email_raw.lower().strip()
             
-            id_banca1 = verificar_presenca_email(email_limpo, c_av1_email)
-            id_banca2 = verificar_presenca_email(email_limpo, c_av2_email)
-            id_suplente = verificar_presenca_email(email_limpo, c_sup_email)
-            id_orienta = verificar_presenca_email(email_limpo, c_ori_email)
+            # Limpeza cirúrgica de cache apenas no momento do clique do login
+            st.cache_data.clear()
+            df_fresh = conn.read(worksheet="Escalacao", ttl=0)
+            df_fresh.columns = df_fresh.columns.astype(str).str.strip().str.lower()
+            
+            id_banca1 = email_limpo in df_fresh[c_av1_email].astype(str).str.strip().str.lower().unique() if c_av1_email else False
+            id_banca2 = email_limpo in df_fresh[c_av2_email].astype(str).str.strip().str.lower().unique() if c_av2_email else False
+            id_suplente = email_limpo in df_fresh[c_sup_email].astype(str).str.strip().str.lower().unique() if c_sup_email else False
+            id_orienta = email_limpo in df_fresh[c_ori_email].astype(str).str.strip().str.lower().unique() if c_ori_email else False
             
             if id_banca1 or id_banca2 or id_suplente or id_orienta:
                 st.session_state.clear()
@@ -278,7 +285,7 @@ if not df_escalacao.empty:
             if ja_avaliou.empty and alunos_grupo:
                 linhas_pendentes.append(row)
                 total_pendencias_contador += 1
-        if linhas_pendentes:
+        if líneas_pendentes:
             pendentes = pd.DataFrame(linhas_pendentes)
 
 # --- AMBIENTE VISUAL DO DOCENTE ---
@@ -407,6 +414,8 @@ else:
                         else:
                             with st.spinner("Gravando parecer de aptidão na planilha..."):
                                 try:
+                                    # Limpa o cache cirurgicamente apenas na hora de escrever no banco
+                                    st.cache_data.clear()
                                     df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
                                     df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
                                     
@@ -418,6 +427,7 @@ else:
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
                                     conn.update(worksheet="Escalacao", data=df_atualizar_linha)
+                                    st.cache_data.clear()
                                     
                                     st.balloons()
                                     st.success("🎉 Ficha de Aptidão registrada e assinada com sucesso! Lote concluído.")
@@ -550,6 +560,8 @@ else:
                         else:
                             with st.spinner("A gravar notas e a sincronizar base de dados..."):
                                 try:
+                                    # Limpa o cache cirurgicamente antes de gravar
+                                    st.cache_data.clear()
                                     df_at = conn.read(worksheet="Respostas", ttl=0)
                                     if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
                                         df_at = pd.DataFrame(columns=colunas_respostas_obrigatorias)
@@ -564,6 +576,7 @@ else:
                                     }])
                                     df_f = pd.concat([df_at, nova_l], ignore_index=True)
                                     conn.update(worksheet="Respostas", data=df_f)
+                                    st.cache_data.clear()
                                     
                                     st.balloons()
                                     st.success("✅ Avaliação gravada com sucesso!")
