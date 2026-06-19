@@ -5,8 +5,9 @@ from datetime import datetime, timedelta
 import time
 import pytz 
 
-# 1. CONFIGURAÇÃO DA PÁGINA (Cache limpo apenas uma vez na inicialização global)
+# 1. CONFIGURAÇÃO DA PÁGINA E LIMPEZA TOTAL DE CACHE
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
+st.cache_data.clear()
 
 # 2. FUSO HORÁRIO DE BRASÍLIA
 fuso_bruta = pytz.timezone('America/Sao_Paulo')
@@ -29,12 +30,9 @@ def tratar_nome_curto(nome_completo):
 # 3. CONEXÃO COM GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def get_data(aba, ttl_sec=2):
-    return conn.read(worksheet=aba, ttl=ttl_sec)
-
 try:
-    # Cache de 20 segundos para evitar travamentos de rede concorrentes nos sliders
-    df_escalacao = conn.read(worksheet="Escalacao", ttl=20)
+    # Aumentado o TTL base para aliviar o servidor, limpezas serão cirúrgicas.
+    df_escalacao = conn.read(worksheet="Escalacao", ttl=60)
     df_escalacao.columns = df_escalacao.columns.astype(str).str.strip().str.lower()
 except:
     st.error("Conectando ao banco de dados... Aguarde.")
@@ -76,17 +74,14 @@ c_aluno3 = buscar_coluna(['aluno', '3'])
 c_aluno4 = buscar_coluna(['aluno', '4'])
 c_aluno5 = buscar_coluna(['aluno', '5'])
 
-# FUNÇÃO AUXILIAR PARA CHECAR SE O EMAIL EXISTE
 def verificar_presenca_email(email, coluna_real):
     if not coluna_real or coluna_real not in df_escalacao.columns:
         return False
     return email in df_escalacao[coluna_real].astype(str).str.strip().str.lower().unique()
 
-# --- TRATAMENTO SEGURO DA ABA DE RESPOSTAS ---
 colunas_respostas_obrigatorias = ["Avaliador", "Email_Avaliador", "Alunos", "Nota_Final", "Papel", "Data_Hora"]
 try:
-    # Cache de 10 segundos para a tabela de respostas na navegação comum
-    df_respostas = conn.read(worksheet="Respostas", ttl=10)
+    df_respostas = conn.read(worksheet="Respostas", ttl=60)
     if df_respostas.empty or not all(col in df_respostas.columns for col in colunas_respostas_obrigatorias):
         df_respostas = pd.DataFrame(columns=colunas_respostas_obrigatorias)
 except:
@@ -116,7 +111,8 @@ if 'email' not in st.session_state:
         """, unsafe_allow_html=True)
 
     st.title("🎓 CRIVO")
-    st.subheader("Sistema de Gestão de Bancas Acadêmicas")
+    # MARCADOR VISUAL DE SUCESSO DA ATUALIZAÇÃO ANTITRAVAMENTO:
+    st.subheader("🚀 CRIVO - V5 TURBO")
     st.caption("© 2026 Desenvolvido por Wanessa Sales de Almeida")
     st.divider()
 
@@ -126,15 +122,10 @@ if 'email' not in st.session_state:
         if email_raw:
             email_limpo = email_raw.lower().strip()
             
-            # Limpeza cirúrgica de cache apenas no momento do clique do login
-            st.cache_data.clear()
-            df_fresh = conn.read(worksheet="Escalacao", ttl=0)
-            df_fresh.columns = df_fresh.columns.astype(str).str.strip().str.lower()
-            
-            id_banca1 = email_limpo in df_fresh[c_av1_email].astype(str).str.strip().str.lower().unique() if c_av1_email else False
-            id_banca2 = email_limpo in df_fresh[c_av2_email].astype(str).str.strip().str.lower().unique() if c_av2_email else False
-            id_suplente = email_limpo in df_fresh[c_sup_email].astype(str).str.strip().str.lower().unique() if c_sup_email else False
-            id_orienta = email_limpo in df_fresh[c_ori_email].astype(str).str.strip().str.lower().unique() if c_ori_email else False
+            id_banca1 = verificar_presenca_email(email_limpo, c_av1_email)
+            id_banca2 = verificar_presenca_email(email_limpo, c_av2_email)
+            id_suplente = verificar_presenca_email(email_limpo, c_sup_email)
+            id_orienta = verificar_presenca_email(email_limpo, c_ori_email)
             
             if id_banca1 or id_banca2 or id_suplente or id_orienta:
                 st.session_state.clear()
@@ -212,7 +203,6 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# CABEÇALHO EM BLOCO IMPACTANTE COM AS CORES DO PAPEL
 sub_titulo_texto = "Sistema de Gestão de Bancas Acadêmicas" if not eh_orientador else "Sistema de Gestão de Orientações"
 st.markdown(f"""
     <div class="bloco-cabecalho">
@@ -222,7 +212,6 @@ st.markdown(f"""
     </div>
     """, unsafe_allow_html=True)
 
-# --- SELETOR DE PERFIL (PAPEL DUPLO) ---
 if tem_papel_ori and tem_papel_banca:
     st.info("🔄 **Perfil Duplo Detectado:** Você atua como Orientador e também como Avaliador de Banca.")
     novo_perfil = st.radio("Selecione qual painel acessar agora:", ["Orientador", "Banca"], index=1 if st.session_state.perfil_ativo == "Banca" else 0, horizontal=True)
@@ -283,12 +272,11 @@ if not df_escalacao.empty:
             
             ja_avaliou = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Banca") & (df_respostas["Alunos"] == string_grupo_banca)]
             if ja_avaliou.empty and alunos_grupo:
-                linhas_pendentes.append(row) # CORREÇÃO ORTOGRÁFICA AQUI
+                linhas_pendentes.append(row)
                 total_pendencias_contador += 1
         if linhas_pendentes:
             pendentes = pd.DataFrame(linhas_pendentes)
 
-# --- AMBIENTE VISUAL DO DOCENTE ---
 col_user, col_exit = st.columns([3, 1])
 with col_user:
     st.write(f"**Docente:** {nome_exibicao} ({'Orientador' if eh_orientador else 'Banca Examinadora'})")
@@ -414,7 +402,6 @@ else:
                         else:
                             with st.spinner("Gravando parecer de aptidão na planilha..."):
                                 try:
-                                    # Limpa o cache cirurgicamente apenas na hora de escrever no banco
                                     st.cache_data.clear()
                                     df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
                                     df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
@@ -427,9 +414,7 @@ else:
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                     df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
                                     conn.update(worksheet="Escalacao", data=df_atualizar_linha)
-                                    st.cache_data.clear()
                                     
-                                    st.balloons()
                                     st.success("🎉 Ficha de Aptidão registrada e assinada com sucesso! Lote concluído.")
                                     time.sleep(1.5)
                                     st.rerun()
@@ -477,7 +462,7 @@ else:
                             "Discente - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
                             "Discente - Desempenho / Cumprimento de Tarefas": (4, "Desempenho satisfatório, com atividades realizadas de forma competente e engajada."),
                             "Discente - Pontualidade e Compromisso": (3, "Pontualidade é mantida consistentemente, demonstrando compromisso com os prazos."),
-                            "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimidoramento."),
+                            "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimoramento."),
                             "Projeto - Formulação do Problema e Justificativa": (5, "Problema de pesquisa é excepcionalmente formulado, e a justificativa é altamente persuasiva, atualizada e relevante."),
                             "Projeto - Objetivos e Hipóteses": (4, "Objetivos são bem formulados e alinhados, e as hipóteses são pertinentes e testáveis."),
                             "Projeto - Revisão de Literatura": (4, "Revisão de literatura é abrangente, crítica e identifica claramente a relevância do estudo na literatura existente."),
@@ -536,52 +521,55 @@ else:
 
                 if rubrica:
                     v_max = sum(p for p, h in rubrica.values())
-                    st.write(f"### 📝 Critérios (Máximo: {v_max} pontos)")
+                    st.write(f"### 📝 Ficha de Avaliação (Máximo: {v_max} pontos)")
+                    st.info("💡 **Dica Rápida:** Ajuste todas as notas deslizando os botões. O aplicativo agora é ultrarrápido e não travará. O total será calculado apenas quando clicar em Gravar.")
                     
-                    notas = {}
-                    for item, (p, help_t) in rubrica.items():
-                        if p == 1:
-                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
-                        else:
-                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
+                    # -------------------------------------------------------------
+                    # A MÁGICA ANTI-TRAVAMENTO ESTÁ NESTE FORMULÁRIO BLINDADO
+                    # -------------------------------------------------------------
+                    with st.form(key=f"form_aval_{aluno_para_salvar}"):
+                        notas = {}
+                        for item, (p, help_t) in rubrica.items():
+                            if p == 1:
+                                notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t)
+                            else:
+                                notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t)
 
-                    total = sum(notas.values())
-                    st.markdown(f"## Nota Atribuída: {total} / {v_max}")
-
-                    tem_zero = any(v == 0 for v in notas.values())
-                    conf_zero = True
-                    if tem_zero:
-                        st.error("⚠️ Existem critérios com nota zero.")
-                        conf_zero = st.checkbox("Confirmo que as notas zero são intencionais.", key=f"c_zero_{aluno_para_salvar}")
-
-                    if st.button("🚀 GRAVAR AVALIAÇÃO NO SISTEMA", key=f"btn_save_{aluno_para_salvar}"):
-                        if tem_zero and not conf_zero:
-                            st.warning("Confirme as notas zero antes de gravar.")
-                        else:
-                            with st.spinner("A gravar notas e a sincronizar base de dados..."):
-                                try:
-                                    # Limpa o cache cirurgicamente antes de gravar
-                                    st.cache_data.clear()
-                                    df_at = conn.read(worksheet="Respostas", ttl=0)
-                                    if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
-                                        df_at = pd.DataFrame(columns=colunas_respostas_obrigatorias)
-                                    
-                                    nova_l = pd.DataFrame([{
-                                        "Avaliador": nome_completo_docente, 
-                                        "Email_Avaliador": email_user, 
-                                        "Alunos": aluno_para_salvar, 
-                                        "Nota_Final": total, 
-                                        "Papel": "Orientador" if eh_orientador else "Banca",
-                                        "Data_Hora": obter_agora().strftime("%d/%m/%Y %H:%M")
-                                    }])
-                                    df_f = pd.concat([df_at, nova_l], ignore_index=True)
-                                    conn.update(worksheet="Respostas", data=df_f)
-                                    st.cache_data.clear()
-                                    
-                                    st.balloons()
-                                    st.success("✅ Avaliação gravada com sucesso!")
-                                    time.sleep(1.5)
-                                    st.rerun()
-                                except:
-                                    time.sleep(1)
-                                    st.rerun()
+                        st.markdown("---")
+                        conf_zero = st.checkbox("Confirmo que eventuais notas zero atribuídas acima são intencionais.")
+                        
+                        submit_btn = st.form_submit_button("🚀 CALCULAR E GRAVAR AVALIAÇÃO NO SISTEMA")
+                        
+                        if submit_btn:
+                            total = sum(notas.values())
+                            tem_zero = any(v == 0 for v in notas.values())
+                            
+                            if tem_zero and not conf_zero:
+                                st.error(f"⚠️ O sistema calculou a sua nota total provisória como **{total}**. Como existem critérios com nota zero, por favor, marque a caixa de confirmação acima e clique em Gravar novamente.")
+                            else:
+                                with st.spinner(f"Gravando a nota total de {total} pontos. Sincronizando com a planilha..."):
+                                    try:
+                                        # Limpa o cache cirurgicamente apenas na hora de escrever no banco
+                                        st.cache_data.clear()
+                                        df_at = conn.read(worksheet="Respostas", ttl=0)
+                                        if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
+                                            df_at = pd.DataFrame(columns=colunas_respostas_obrigatorias)
+                                        
+                                        nova_l = pd.DataFrame([{
+                                            "Avaliador": nome_completo_docente, 
+                                            "Email_Avaliador": email_user, 
+                                            "Alunos": aluno_para_salvar, 
+                                            "Nota_Final": total, 
+                                            "Papel": "Orientador" if eh_orientador else "Banca",
+                                            "Data_Hora": obter_agora().strftime("%d/%m/%Y %H:%M")
+                                        }])
+                                        df_f = pd.concat([df_at, nova_l], ignore_index=True)
+                                        conn.update(worksheet="Respostas", data=df_f)
+                                        st.cache_data.clear()
+                                        
+                                        st.success(f"✅ Sucesso! Nota oficial {total}/{v_max} gravada na planilha.")
+                                        time.sleep(2)
+                                        st.rerun()
+                                    except Exception as e:
+                                        time.sleep(1)
+                                        st.rerun()
