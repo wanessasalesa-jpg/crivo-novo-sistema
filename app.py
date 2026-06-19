@@ -54,7 +54,7 @@ c_av1_nome = buscar_coluna(['avaliador', '1'], evitar='email')
 c_av2_email = buscar_coluna(['email', '2'])
 c_av2_nome = buscar_coluna(['avaliador', '2'], evitar='email')
 
-# Radar infalível para o Suplente (vai mapear 'email_avaliador_suplente' perfeitamente)
+# Radar infalível para o Suplente
 c_sup_email = buscar_coluna(['email', 'suplente'])
 c_sup_nome = buscar_coluna(['suplente'], evitar='email')
 
@@ -114,8 +114,7 @@ if 'email' not in st.session_state:
         """, unsafe_allow_html=True)
 
     st.title("🎓 CRIVO")
-    # MARCADOR VISUAL DE SUCESSO DA ATUALIZAÇÃO:
-    st.subheader("🚀 CRIVO ATUALIZADO - VERSÃO FINAL 4.0")
+    st.subheader("Sistema de Gestão de Bancas Acadêmicas")
     st.caption("© 2026 Desenvolvido por Wanessa Sales de Almeida")
     st.divider()
 
