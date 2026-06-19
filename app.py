@@ -283,9 +283,9 @@ if not df_escalacao.empty:
             
             ja_avaliou = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Banca") & (df_respostas["Alunos"] == string_grupo_banca)]
             if ja_avaliou.empty and alunos_grupo:
-                linhas_pendentes.append(row)
+                linhas_pendentes.append(row) # CORREÇÃO ORTOGRÁFICA AQUI
                 total_pendencias_contador += 1
-        if líneas_pendentes:
+        if linhas_pendentes:
             pendentes = pd.DataFrame(linhas_pendentes)
 
 # --- AMBIENTE VISUAL DO DOCENTE ---
@@ -477,7 +477,7 @@ else:
                             "Discente - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
                             "Discente - Desempenho / Cumprimento de Tarefas": (4, "Desempenho satisfatório, com atividades realizadas de forma competente e engajada."),
                             "Discente - Pontualidade e Compromisso": (3, "Pontualidade é mantida consistentemente, demonstrando compromisso com os prazos."),
-                            "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimoramento."),
+                            "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimidoramento."),
                             "Projeto - Formulação do Problema e Justificativa": (5, "Problema de pesquisa é excepcionalmente formulado, e a justificativa é altamente persuasiva, atualizada e relevante."),
                             "Projeto - Objetivos e Hipóteses": (4, "Objetivos são bem formulados e alinhados, e as hipóteses são pertinentes e testáveis."),
                             "Projeto - Revisão de Literatura": (4, "Revisão de literatura é abrangente, crítica e identifica claramente a relevância do estudo na literatura existente."),
