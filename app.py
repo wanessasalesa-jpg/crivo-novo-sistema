@@ -5,9 +5,8 @@ from datetime import datetime, timedelta
 import time
 import pytz 
 
-# 1. CONFIGURAÇÃO DA PÁGINA E LIMPEZA TOTAL DE CACHE
+# 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
-st.cache_data.clear()
 
 # 2. FUSO HORÁRIO DE BRASÍLIA
 fuso_bruta = pytz.timezone('America/Sao_Paulo')
@@ -30,9 +29,12 @@ def tratar_nome_curto(nome_completo):
 # 3. CONEXÃO COM GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+def get_data(aba, ttl_sec=2):
+    return conn.read(worksheet=aba, ttl=ttl_sec)
+
 try:
-    # Aumentado o TTL base para aliviar o servidor, limpezas serão cirúrgicas.
-    df_escalacao = conn.read(worksheet="Escalacao", ttl=60)
+    # Cache de longo prazo alivia o servidor do Google e zera o lag dos sliders
+    df_escalacao = conn.read(worksheet="Escalacao", ttl=300)
     df_escalacao.columns = df_escalacao.columns.astype(str).str.strip().str.lower()
 except:
     st.error("Conectando ao banco de dados... Aguarde.")
@@ -111,8 +113,7 @@ if 'email' not in st.session_state:
         """, unsafe_allow_html=True)
 
     st.title("🎓 CRIVO")
-    # MARCADOR VISUAL DE SUCESSO DA ATUALIZAÇÃO ANTITRAVAMENTO:
-    st.subheader("🚀 CRIVO - V5 TURBO")
+    st.subheader("Sistema de Gestão de Bancas Acadêmicas")
     st.caption("© 2026 Desenvolvido por Wanessa Sales de Almeida")
     st.divider()
 
@@ -122,10 +123,14 @@ if 'email' not in st.session_state:
         if email_raw:
             email_limpo = email_raw.lower().strip()
             
-            id_banca1 = verificar_presenca_email(email_limpo, c_av1_email)
-            id_banca2 = verificar_presenca_email(email_limpo, c_av2_email)
-            id_suplente = verificar_presenca_email(email_limpo, c_sup_email)
-            id_orienta = verificar_presenca_email(email_limpo, c_ori_email)
+            st.cache_data.clear()
+            df_fresh = conn.read(worksheet="Escalacao", ttl=0)
+            df_fresh.columns = df_fresh.columns.astype(str).str.strip().str.lower()
+            
+            id_banca1 = email_limpo in df_fresh[c_av1_email].astype(str).str.strip().str.lower().unique() if c_av1_email else False
+            id_banca2 = email_limpo in df_fresh[c_av2_email].astype(str).str.strip().str.lower().unique() if c_av2_email else False
+            id_suplente = email_limpo in df_fresh[c_sup_email].astype(str).str.strip().str.lower().unique() if c_sup_email else False
+            id_orienta = email_limpo in df_fresh[c_ori_email].astype(str).str.strip().str.lower().unique() if c_ori_email else False
             
             if id_banca1 or id_banca2 or id_suplente or id_orienta:
                 st.session_state.clear()
@@ -401,25 +406,33 @@ else:
                             st.error("Por favor, digite seu nome no campo de assinatura para validar o documento.")
                         else:
                             with st.spinner("Gravando parecer de aptidão na planilha..."):
-                                try:
-                                    st.cache_data.clear()
-                                    df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
-                                    df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
-                                    
-                                    if c_aptidao_col in df_atualizar_linha.columns:
-                                        df_atualizar_linha[c_aptidao_col] = df_atualizar_linha[c_aptidao_col].astype(object)
-                                    if c_assinatura_col in df_atualizar_linha.columns:
-                                        df_atualizar_linha[c_assinatura_col] = df_atualizar_linha[c_assinatura_col].astype(object)
-                                    
-                                    df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
-                                    df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
-                                    conn.update(worksheet="Escalacao", data=df_atualizar_linha)
-                                    
+                                sucesso_apt = False
+                                for tentativa in range(5):
+                                    try:
+                                        st.cache_data.clear()
+                                        df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
+                                        df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
+                                        
+                                        if c_aptidao_col in df_atualizar_linha.columns:
+                                            df_atualizar_linha[c_aptidao_col] = df_atualizar_linha[c_aptidao_col].astype(object)
+                                        if c_assinatura_col in df_atualizar_linha.columns:
+                                            df_atualizar_linha[c_assinatura_col] = df_atualizar_linha[c_assinatura_col].astype(object)
+                                        
+                                        df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
+                                        df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
+                                        conn.update(worksheet="Escalacao", data=df_atualizar_linha)
+                                        st.cache_data.clear()
+                                        sucesso_apt = True
+                                        break
+                                    except:
+                                        time.sleep(1 + tentativa)
+                                
+                                if sucesso_apt:
                                     st.success("🎉 Ficha de Aptidão registrada e assinada com sucesso! Lote concluído.")
                                     time.sleep(1.5)
                                     st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao salvar: {e}")
+                                else:
+                                    st.error("❌ Servidor instável. Por favor, CLIQUE NOVAMENTE para retransmitir.")
 
             elif exibir_formulario_notas:
                 aluno_para_salvar = aluno_alvo_final
@@ -437,7 +450,7 @@ else:
                             "Responsabilidade com a Aprendizagem": (5, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e aprimoramento."),
                             "Texto - Justificativa do Estudo": (6, "Apresenta com clareza a relevância científica, social ou profissional; bem estruturada e relacionada ao problema."),
                             "Texto - Objetivo Geral e Específicos": (6, "Objetivo geral claro, coerente com a justificativa; objetivos específicos bem formulados e articulados."),
-                            "Texto - Fundamentação Teórica / Referências": (6, "Referencial teórico relevante, atualizado (últimos 5 anos em sua maioria) e articulado ao tema."),
+                            "Texto - Fundamentação Teórica / Referências": (6, "Referencial teórico relevante, atualizado (últimos 5 anos em sua maioria) and articulado ao tema."),
                             "Texto - Metodologia Proposta": (10, "Método bem descrito, adequado aos objetivos, com definição de tipo de estudo, população e análise."),
                             "Texto - Cronograma de Execução": (1, "Cronograma bem estruturado, com etapas claras e prazos viáveis."),
                             "Texto - Estrutura, Linguagem e Formatação": (6, "Texto bem escrito, estruturado, sem erros relevantes; segue as normas (ABNT ou Vancouver)."),
@@ -522,34 +535,36 @@ else:
                 if rubrica:
                     v_max = sum(p for p, h in rubrica.values())
                     st.write(f"### 📝 Ficha de Avaliação (Máximo: {v_max} pontos)")
-                    st.info("💡 **Dica Rápida:** Ajuste todas as notas deslizando os botões. O aplicativo agora é ultrarrápido e não travará. O total será calculado apenas quando clicar em Gravar.")
                     
                     # -------------------------------------------------------------
-                    # A MÁGICA ANTI-TRAVAMENTO ESTÁ NESTE FORMULÁRIO BLINDADO
+                    # SLIDERS FORA DO FORMULÁRIO = CÁLCULO TOTAL EM TEMPO REAL NA TELA
                     # -------------------------------------------------------------
-                    with st.form(key=f"form_aval_{aluno_para_salvar}"):
-                        notas = {}
-                        for item, (p, help_t) in rubrica.items():
-                            if p == 1:
-                                notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t)
-                            else:
-                                notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t)
+                    notas = {}
+                    for item, (p, help_t) in rubrica.items():
+                        if p == 1:
+                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
+                        else:
+                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
 
-                        st.markdown("---")
-                        conf_zero = st.checkbox("Confirmo que eventuais notas zero atribuídas acima são intencionais.")
-                        
-                        submit_btn = st.form_submit_button("🚀 CALCULAR E GRAVAR AVALIAÇÃO NO SISTEMA")
-                        
-                        if submit_btn:
-                            total = sum(notas.values())
-                            tem_zero = any(v == 0 for v in notas.values())
-                            
-                            if tem_zero and not conf_zero:
-                                st.error(f"⚠️ O sistema calculou a sua nota total provisória como **{total}**. Como existem critérios com nota zero, por favor, marque a caixa de confirmação acima e clique em Gravar novamente.")
-                            else:
-                                with st.spinner(f"Gravando a nota total de {total} pontos. Sincronizando com a planilha..."):
+                    # EXIBIÇÃO INSTANTÂNEA E DINÂMICA DA NOTA
+                    total = sum(notas.values())
+                    st.markdown(f"## Nota Atribuída: {total} / {v_max}")
+
+                    tem_zero = any(v == 0 for v in notas.values())
+                    conf_zero = True
+                    if tem_zero:
+                        st.error("⚠️ Existem critérios com nota zero.")
+                        conf_zero = st.checkbox("Confirmo que eventuais notas zero atribuídas acima são intencionais.", key=f"c_zero_{aluno_para_salvar}")
+
+                    # BOTÃO DE ACIONAMENTO ÚNICO COM REDE PROTEGIDA E RETENTATIVAS
+                    if st.button("🚀 GRAVAR AVALIAÇÃO NO SISTEMA", key=f"btn_save_{aluno_para_salvar}"):
+                        if tem_zero and not conf_zero:
+                            st.warning("Confirme as notas zero antes de gravar.")
+                        else:
+                            with st.spinner("Sincronizando nota com a planilha... Por favor, aguarde."):
+                                sucesso_nota = False
+                                for tentativa in range(5):
                                     try:
-                                        # Limpa o cache cirurgicamente apenas na hora de escrever no banco
                                         st.cache_data.clear()
                                         df_at = conn.read(worksheet="Respostas", ttl=0)
                                         if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
@@ -566,10 +581,14 @@ else:
                                         df_f = pd.concat([df_at, nova_l], ignore_index=True)
                                         conn.update(worksheet="Respostas", data=df_f)
                                         st.cache_data.clear()
-                                        
-                                        st.success(f"✅ Sucesso! Nota oficial {total}/{v_max} gravada na planilha.")
-                                        time.sleep(2)
-                                        st.rerun()
-                                    except Exception as e:
-                                        time.sleep(1)
-                                        st.rerun()
+                                        sucesso_nota = True
+                                        break
+                                    except:
+                                        time.sleep(1 + tentativa)
+                                
+                                if sucesso_nota:
+                                    st.success(f"✅ Sucesso! Nota oficial {total}/{v_max} gravada na planilha.")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ O servidor do Google Sheets está instável pelo alto tráfego concorrente. Sua nota NÃO foi perdida. Por favor, CLIQUE NOVAMENTE no botão acima para retransmitir.")
