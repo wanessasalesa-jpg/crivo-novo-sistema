@@ -5,8 +5,12 @@ from datetime import datetime, timedelta
 import time
 import pytz 
 
-# 1. CONFIGURAÇÃO DA PÁGINA
+# 1. CONFIGURAÇÃO DA PÁGINA (SEM LIMPEZA GLOBAL DE CACHE AQUI)
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
+
+# Inicia a memória local do celular do professor para não depender de baixar a planilha o tempo todo
+if 'concluidos' not in st.session_state:
+    st.session_state.concluidos = []
 
 # 2. FUSO HORÁRIO DE BRASÍLIA
 fuso_bruta = pytz.timezone('America/Sao_Paulo')
@@ -14,7 +18,7 @@ fuso_bruta = pytz.timezone('America/Sao_Paulo')
 def obter_agora():
     return datetime.now(fuso_bruta)
 
-# FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO DO APP (IGNORA PREPOSIÇÕES)
+# FUNÇÃO PARA ENCURTAR NOMES
 def tratar_nome_curto(nome_completo):
     if not nome_completo or pd.isna(nome_completo):
         return ""
@@ -29,11 +33,8 @@ def tratar_nome_curto(nome_completo):
 # 3. CONEXÃO COM GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def get_data(aba, ttl_sec=2):
-    return conn.read(worksheet=aba, ttl=ttl_sec)
-
 try:
-    # Cache de longo prazo alivia o servidor do Google e zera o lag dos sliders
+    # Memória de 5 minutos: impede que o app trave ao mover os sliders
     df_escalacao = conn.read(worksheet="Escalacao", ttl=300)
     df_escalacao.columns = df_escalacao.columns.astype(str).str.strip().str.lower()
 except:
@@ -41,7 +42,7 @@ except:
     time.sleep(1)
     st.rerun()
 
-# --- MAPEAMENTO BLINDADO DE COLUNAS (O RADAR) ---
+# --- MAPEAMENTO BLINDADO DE COLUNAS ---
 def buscar_coluna(palavras_chave, evitar=None):
     for col in df_escalacao.columns:
         if all(p in col for p in palavras_chave):
@@ -52,13 +53,10 @@ def buscar_coluna(palavras_chave, evitar=None):
 
 c_av1_email = buscar_coluna(['email', '1'])
 c_av1_nome = buscar_coluna(['avaliador', '1'], evitar='email')
-
 c_av2_email = buscar_coluna(['email', '2'])
 c_av2_nome = buscar_coluna(['avaliador', '2'], evitar='email')
-
 c_sup_email = buscar_coluna(['email', 'suplente'])
 c_sup_nome = buscar_coluna(['suplente'], evitar='email')
-
 c_ori_email = buscar_coluna(['email', 'orientador'])
 c_ori_nome = buscar_coluna(['orientador'], evitar='email')
 
@@ -66,7 +64,6 @@ c_turma = buscar_coluna(['turma'])
 c_titulo = buscar_coluna(['titulo']) or buscar_coluna(['título'])
 c_data = buscar_coluna(['data'])
 c_horario = buscar_coluna(['horario']) or buscar_coluna(['horário'])
-
 c_aptidao_col = buscar_coluna(['aptid', 'defesa'])
 c_assinatura_col = buscar_coluna(['assinatura', 'orientador'])
 
@@ -100,19 +97,12 @@ if 'email' not in st.session_state:
         header {visibility: hidden !important;}
         #MainMenu {visibility: hidden !important;}
         footer {visibility: hidden;}
-        .stButton button {
-            width: 100% !important;
-            border-radius: 10px !important;
-            height: 3.5em !important;
-            background-color: #002147 !important;
-            color: white !important;
-            font-weight: bold !important;
-            border: none !important;
-        }
+        .stButton button { width: 100% !important; border-radius: 10px !important; height: 3.5em !important; background-color: #002147 !important; color: white !important; font-weight: bold !important; border: none !important; }
         </style>
         """, unsafe_allow_html=True)
 
-    st.title("🎓 CRIVO")
+    # MARCADOR VISUAL DE QUE O SISTEMA ANTI-TRAVAMENTO ESTÁ NO AR
+    st.title("🎓 CRIVO - VERSÃO ESTÁVEL")
     st.subheader("Sistema de Gestão de Bancas Acadêmicas")
     st.caption("© 2026 Desenvolvido por Wanessa Sales de Almeida")
     st.divider()
@@ -123,7 +113,7 @@ if 'email' not in st.session_state:
         if email_raw:
             email_limpo = email_raw.lower().strip()
             
-            st.cache_data.clear()
+            # Leitura ao vivo apenas no login
             df_fresh = conn.read(worksheet="Escalacao", ttl=0)
             df_fresh.columns = df_fresh.columns.astype(str).str.strip().str.lower()
             
@@ -134,6 +124,7 @@ if 'email' not in st.session_state:
             
             if id_banca1 or id_banca2 or id_suplente or id_orienta:
                 st.session_state.clear()
+                st.session_state.concluidos = []
                 st.session_state.email = email_limpo
                 st.query_params["user"] = email_limpo
                 st.rerun()
@@ -181,30 +172,9 @@ st.markdown(f"""
     header {{visibility: hidden !important;}}
     #MainMenu {{visibility: hidden !important;}}
     footer {{visibility: hidden;}}
-    
-    .bloco-cabecalho {{
-        background-color: {cor_primaria} !important;
-        padding: 25px !important;
-        border-radius: 12px !important;
-        color: {cor_texto_bloco} !important;
-        margin-bottom: 25px !important;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.1) !important;
-    }}
-    .bloco-cabecalho h1, .bloco-cabecalho h3, .bloco-cabecalho p {{
-        color: {cor_texto_bloco} !important;
-        margin: 0 !important;
-        padding: 2px 0 !important;
-    }}
-    
-    .stButton button {{
-        width: 100% !important;
-        border-radius: 10px !important;
-        height: 3.5em !important;
-        background-color: {cor_primaria} !important;
-        color: white !important;
-        font-weight: bold !important;
-        border: none !important;
-    }}
+    .bloco-cabecalho {{ background-color: {cor_primaria} !important; padding: 25px !important; border-radius: 12px !important; color: {cor_texto_bloco} !important; margin-bottom: 25px !important; box-shadow: 0px 4px 10px rgba(0,0,0,0.1) !important; }}
+    .bloco-cabecalho h1, .bloco-cabecalho h3, .bloco-cabecalho p {{ color: {cor_texto_bloco} !important; margin: 0 !important; padding: 2px 0 !important; }}
+    .stButton button {{ width: 100% !important; border-radius: 10px !important; height: 3.5em !important; background-color: {cor_primaria} !important; color: white !important; font-weight: bold !important; border: none !important; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -213,7 +183,6 @@ st.markdown(f"""
     <div class="bloco-cabecalho">
         <h1>🎓 CRIVO</h1>
         <h3>{sub_titulo_texto}</h3>
-        <p style="font-size: 0.85em; opacity: 0.8;">© 2026 Desenvolvido por Wanessa Sales de Almeida</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -233,7 +202,7 @@ def obter_lista_alunos_linha(row):
                 lista.append(nome)
     return lista
 
-# --- FILTRAGEM DE GRUPOS PENDENTES EM TEMPO REAL ---
+# --- FILTRAGEM DE GRUPOS PENDENTES USANDO MEMÓRIA LOCAL DO CELULAR ---
 pendentes = pd.DataFrame()
 total_pendencias_contador = 0
 
@@ -249,11 +218,17 @@ if not df_escalacao.empty:
                 continue
                 
             alunos_grupo = obter_lista_alunos_linha(row)
-            avaliados = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
-            alunos_restantes = [a for a in alunos_grupo if a not in avaliados]
             
-            ja_preencheu_aptidao = pd.notna(row.get(c_aptidao_col)) and str(row.get(c_aptidao_col)).strip() != "" if c_aptidao_col else False
-            precisa_tela_aptidao = ("TCCII" in tb_clean_check or "TCC2" in tb_clean_check) and not ja_preencheu_aptidao
+            # Combina quem está no banco E quem acabou de ser salvo na memória local
+            avaliados_banco = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
+            avaliados_total = list(set(avaliados_banco + st.session_state.concluidos))
+            alunos_restantes = [a for a in alunos_grupo if a not in avaliados_total]
+            
+            ja_preencheu_banco = pd.notna(row.get(c_aptidao_col)) and str(row.get(c_aptidao_col)).strip() != "" if c_aptidao_col else False
+            string_grupo_banca = ", ".join(alunos_grupo)
+            ja_preencheu_sessao = f"aptidao_{string_grupo_banca}" in st.session_state.concluidos
+            
+            precisa_tela_aptidao = ("TCCII" in tb_clean_check or "TCC2" in tb_clean_check) and not ja_preencheu_banco and not ja_preencheu_sessao
             
             if alunos_restantes or precisa_tela_aptidao:
                 linhas_pendentes.append(row)
@@ -275,8 +250,10 @@ if not df_escalacao.empty:
             alunos_grupo = obter_lista_alunos_linha(row)
             string_grupo_banca = ", ".join(alunos_grupo)
             
-            ja_avaliou = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Banca") & (df_respostas["Alunos"] == string_grupo_banca)]
-            if ja_avaliou.empty and alunos_grupo:
+            ja_avaliou_banco = not df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Banca") & (df_respostas["Alunos"] == string_grupo_banca)].empty
+            ja_avaliou_sessao = string_grupo_banca in st.session_state.concluidos
+            
+            if (not ja_avaliou_banco) and (not ja_avaliou_sessao) and alunos_grupo:
                 linhas_pendentes.append(row)
                 total_pendencias_contador += 1
         if linhas_pendentes:
@@ -365,51 +342,40 @@ else:
             exibir_tela_aptidao_final = False
 
             if eh_orientador:
-                if "MCMV" in tb_clean or "MCM5" in tb_clean:
-                    exibir_formulario_notas = False
-                    st.warning("⚠️ Nota do orientador não aplicável para esta turma. A turma MCM V possui 100% da nota final atribuída exclusivamente pela banca examinadora.")
+                avaliados_banco = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
+                avaliados_total = list(set(avaliados_banco + st.session_state.concluidos))
+                lista_alunos_individuais = [a for a in alunos_reais_lista if a not in avaliados_total]
+                
+                if lista_alunos_individuais:
+                    aluno_alvo_final = st.selectbox(
+                        "👤 Selecione o Aluno para atribuir a nota individual:", 
+                        lista_alunos_individuais,
+                        format_func=tratar_nome_curto
+                    )
                 else:
-                    avaliados_na_aba = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
-                    lista_alunos_individuais = [a for a in alunos_reais_lista if a not in avaliados_na_aba]
-                    
-                    if lista_alunos_individuais:
-                        aluno_alvo_final = st.selectbox(
-                            "👤 Selecione o Aluno para atribuir a nota individual:", 
-                            lista_alunos_individuais,
-                            format_func=tratar_nome_curto
-                        )
-                    else:
-                        exibir_formulario_notas = False
-                        if "TCCII" in tb_clean or "TCC2" in tb_clean:
-                            exibir_tela_aptidao_final = True
-                        else:
-                            st.success("Todos os alunos deste grupo já foram avaliados por si!")
+                    exibir_formulario_notas = False
+                    if "TCCII" in tb_clean or "TCC2" in tb_clean:
+                        exibir_tela_aptidao_final = True
 
             if eh_orientador and exibir_tela_aptidao_final:
                 st.markdown("---")
                 st.subheader("📋 TELA 2: Ficha de Aptidão de Defesa (Exclusivo TCC II)")
-                st.info("Parabéns! As avaliações individuais dos alunos foram concluídas. Agora, preencha o parecer de aptidão do grupo para fechar a banca.")
                 
                 with st.form("form_aptidao_tcc2"):
                     resposta_aptidao = st.radio(
                         "**O projeto de Trabalho de Conclusão de Curso (TCC II) entregue pelo grupo encontra-se:**",
-                        ["", "APTO para apresentação", "INAPTO para apresentação"],
-                        index=0,
-                        help="Marque a condição de aceitabilidade do trabalho para a defesa."
+                        ["", "APTO para apresentação", "INAPTO para apresentação"], index=0
                     )
                     assinatura_texto = st.text_input("**Assinatura Digital (Digite seu Nome Completo para assinar):**", value="").strip()
                     
                     if st.form_submit_button("🚀 ENVIAR PARECER E CONCLUIR BANCA"):
-                        if resposta_aptidao == "":
-                            st.error("Por favor, selecione se o grupo está APTO ou INAPTO.")
-                        elif assinatura_texto == "":
-                            st.error("Por favor, digite seu nome no campo de assinatura para validar o documento.")
+                        if resposta_aptidao == "" or assinatura_texto == "":
+                            st.error("Por favor, preencha todos os campos obrigatórios.")
                         else:
                             with st.spinner("Gravando parecer de aptidão na planilha..."):
                                 sucesso_apt = False
                                 for tentativa in range(5):
                                     try:
-                                        st.cache_data.clear()
                                         df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
                                         df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
                                         
@@ -421,18 +387,18 @@ else:
                                         df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                         df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
                                         conn.update(worksheet="Escalacao", data=df_atualizar_linha)
-                                        st.cache_data.clear()
                                         sucesso_apt = True
                                         break
                                     except:
                                         time.sleep(1 + tentativa)
                                 
                                 if sucesso_apt:
+                                    st.session_state.concluidos.append(f"aptidao_{string_grupo_completo}")
                                     st.success("🎉 Ficha de Aptidão registrada e assinada com sucesso! Lote concluído.")
                                     time.sleep(1.5)
                                     st.rerun()
                                 else:
-                                    st.error("❌ Servidor instável. Por favor, CLIQUE NOVAMENTE para retransmitir.")
+                                    st.error("❌ Servidor instável. Por favor, CLIQUE NOVAMENTE no botão.")
 
             elif exibir_formulario_notas:
                 aluno_para_salvar = aluno_alvo_final
@@ -440,7 +406,6 @@ else:
                 
                 if eh_orientador:
                     st.info(f"🌱 Avaliando individualmente o discente: **{tratar_nome_curto(aluno_para_salvar)}**")
-                    
                     if "MCMIV" in tb_clean or "MCM4" in tb_clean:
                         rubrica = {
                             "Desenv. - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrando alta responsabilidade e comprometimento no processo de elaboração."),
@@ -450,7 +415,7 @@ else:
                             "Responsabilidade com a Aprendizagem": (5, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e aprimoramento."),
                             "Texto - Justificativa do Estudo": (6, "Apresenta com clareza a relevância científica, social ou profissional; bem estruturada e relacionada ao problema."),
                             "Texto - Objetivo Geral e Específicos": (6, "Objetivo geral claro, coerente com a justificativa; objetivos específicos bem formulados e articulados."),
-                            "Texto - Fundamentação Teórica / Referências": (6, "Referencial teórico relevante, atualizado (últimos 5 anos em sua maioria) and articulado ao tema."),
+                            "Texto - Fundamentação Teórica / Referências": (6, "Referencial teórico relevante, atualizado (últimos 5 anos em sua maioria) e articulado ao tema."),
                             "Texto - Metodologia Proposta": (10, "Método bem descrito, adequado aos objetivos, com definição de tipo de estudo, população e análise."),
                             "Texto - Cronograma de Execução": (1, "Cronograma bem estruturado, com etapas claras e prazos viáveis."),
                             "Texto - Estrutura, Linguagem e Formatação": (6, "Texto bem escrito, estruturado, sem erros relevantes; segue as normas (ABNT ou Vancouver)."),
@@ -484,7 +449,6 @@ else:
                         }
                 else:
                     st.info("🎓 Você está visualizando a Rubrica de Avaliação da Banca (Nota para o Grupo todo).")
-                    
                     if "MCMIV" in tb_clean or "MCM4" in tb_clean:
                         rubrica = {
                             "Delineamento - Rigor Científico e Metodologia": (10, "Adequação do desenho do estudo, viabilidade técnica e delineamento claro dos procedimentos propostos."),
@@ -534,11 +498,8 @@ else:
 
                 if rubrica:
                     v_max = sum(p for p, h in rubrica.values())
-                    st.write(f"### 📝 Ficha de Avaliação (Máximo: {v_max} pontos)")
+                    st.write(f"### 📝 Critérios (Máximo: {v_max} pontos)")
                     
-                    # -------------------------------------------------------------
-                    # SLIDERS FORA DO FORMULÁRIO = CÁLCULO TOTAL EM TEMPO REAL NA TELA
-                    # -------------------------------------------------------------
                     notas = {}
                     for item, (p, help_t) in rubrica.items():
                         if p == 1:
@@ -546,7 +507,6 @@ else:
                         else:
                             notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
 
-                    # EXIBIÇÃO INSTANTÂNEA E DINÂMICA DA NOTA
                     total = sum(notas.values())
                     st.markdown(f"## Nota Atribuída: {total} / {v_max}")
 
@@ -554,9 +514,8 @@ else:
                     conf_zero = True
                     if tem_zero:
                         st.error("⚠️ Existem critérios com nota zero.")
-                        conf_zero = st.checkbox("Confirmo que eventuais notas zero atribuídas acima são intencionais.", key=f"c_zero_{aluno_para_salvar}")
+                        conf_zero = st.checkbox("Confirmo que as notas zero são intencionais.", key=f"c_zero_{aluno_para_salvar}")
 
-                    # BOTÃO DE ACIONAMENTO ÚNICO COM REDE PROTEGIDA E RETENTATIVAS
                     if st.button("🚀 GRAVAR AVALIAÇÃO NO SISTEMA", key=f"btn_save_{aluno_para_salvar}"):
                         if tem_zero and not conf_zero:
                             st.warning("Confirme as notas zero antes de gravar.")
@@ -565,7 +524,7 @@ else:
                                 sucesso_nota = False
                                 for tentativa in range(5):
                                     try:
-                                        st.cache_data.clear()
+                                        # Puxa as respostas ao vivo no exato milissegundo da gravação
                                         df_at = conn.read(worksheet="Respostas", ttl=0)
                                         if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
                                             df_at = pd.DataFrame(columns=colunas_respostas_obrigatorias)
@@ -580,13 +539,14 @@ else:
                                         }])
                                         df_f = pd.concat([df_at, nova_l], ignore_index=True)
                                         conn.update(worksheet="Respostas", data=df_f)
-                                        st.cache_data.clear()
                                         sucesso_nota = True
                                         break
                                     except:
                                         time.sleep(1 + tentativa)
                                 
                                 if sucesso_nota:
+                                    # Grava localmente que o trabalho foi feito! O app não vai procurar no Google mais.
+                                    st.session_state.concluidos.append(aluno_para_salvar)
                                     st.success(f"✅ Sucesso! Nota oficial {total}/{v_max} gravada na planilha.")
                                     time.sleep(1.5)
                                     st.rerun()
