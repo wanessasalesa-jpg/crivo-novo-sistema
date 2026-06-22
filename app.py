@@ -37,7 +37,7 @@ def get_data(aba, ttl_sec=2):
     return conn.read(worksheet=aba, ttl=ttl_sec)
 
 try:
-    # Cache otimizado de 5 minutos evita requisições concorrentes lentas nos sliders
+    # Cache otimizado de 5 minutos evita requisições concorrentes lentas
     df_escalacao = conn.read(worksheet="Escalacao", ttl=300)
     df_escalacao.columns = df_escalacao.columns.astype(str).str.strip().str.lower()
 except:
@@ -394,12 +394,12 @@ else:
                     assinatura_texto = st.text_input("**Assinatura Digital (Digite seu Nome Completo para assinar):**", value="").strip()
                     
                     if st.form_submit_button("🚀 ENVIAR PARECER E CONCLUIR BANCA"):
-                        if resposta_aptidao == "" or signature_texto == "":
+                        if resposta_aptidao == "" or assinatura_texto == "":
                             st.error("Por favor, preencha todos os campos obrigatórios.")
                         else:
-                            with st.spinner("Gravando parecer de aptidão na planilha..."):
-                                 sucesso_apt = False
-                                 for tentativa in range(5):
+                            with st.spinner("Gravando parecer de aptidão na planilha... Por favor, aguarde."):
+                                sucesso_apt = False
+                                for tentativa in range(5):
                                      try:
                                          df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
                                          df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
@@ -417,13 +417,13 @@ else:
                                      except:
                                          time.sleep(1 + tentativa)
                                  
-                                 if sucesso_apt:
+                                if sucesso_apt:
                                      st.session_state.concluidos.append(f"aptidao_{string_grupo_completo}")
-                                     st.balloons() # Subida de Balões reativada
+                                     st.balloons() 
                                      st.success("🎉 Ficha de Aptidão registrada e assinada com sucesso! Lote concluído.")
                                      time.sleep(1.5)
                                      st.rerun()
-                                 else:
+                                else:
                                      st.error("❌ Servidor instável. Por favor, CLIQUE NOVAMENTE no botão.")
 
             elif exibir_formulario_notas:
@@ -528,6 +528,7 @@ else:
                     v_max = sum(p for p, h in rubrica.values())
                     st.write(f"### 📝 Critérios (Máximo: {v_max} pontos)")
                     
+                    # OS SLIDERS FICAM LIVRES PARA ATUALIZAR A SOMA AO VIVO
                     notas = {}
                     for item, (p, help_t) in rubrica.items():
                         if p == 1:
@@ -536,19 +537,23 @@ else:
                             notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
 
                     total = sum(notas.values())
-                    st.markdown(f"## Nota Atribuída: {total} / {v_max}")
+                    
+                    # EXIBIÇÃO DA NOTA AO VIVO BEM DESTACADA
+                    st.markdown(f"<h2 style='text-align: center; color: {cor_primaria};'>Nota Final Atribuída: {total} / {v_max}</h2>", unsafe_allow_html=True)
+                    st.markdown("---")
 
                     tem_zero = any(v == 0 for v in notas.values())
                     conf_zero = True
                     if tem_zero:
-                        st.error("⚠️ Existem critérios com nota zero.")
+                        st.error("⚠️ Atenção: Existem critérios com nota zero. Verifique se isso está correto.")
                         conf_zero = st.checkbox("Confirmo que as notas zero são intencionais.", key=f"c_zero_{aluno_para_salvar}")
 
+                    # O SPINNER ENTRA EM AÇÃO SÓ NO CLIQUE PARA ESCONDER OS 20 SEGUNDOS DO GOOGLE SHEETS
                     if st.button("🚀 GRAVAR AVALIAÇÃO NO SISTEMA", key=f"btn_save_{aluno_para_salvar}"):
                         if tem_zero and not conf_zero:
-                            st.warning("Confirme as notas zero antes de gravar.")
+                            st.warning("Confirme a caixa de notas zero antes de gravar.")
                         else:
-                            with st.spinner("Sincronizando nota com a planilha... Por favor, aguarde."):
+                            with st.spinner("Sincronizando nota com a planilha do Google... Por favor, aguarde."):
                                 sucesso_nota = False
                                 for tentativa in range(5):
                                     try:
@@ -573,9 +578,9 @@ else:
                                 
                                 if sucesso_nota:
                                     st.session_state.concluidos.append(aluno_para_salvar)
-                                    st.balloons() # Subida de Balões reativada
+                                    st.balloons() 
                                     st.success(f"✅ Sucesso! Nota oficial {total}/{v_max} gravada na planilha.")
-                                    time.sleep(1.5)
+                                    time.sleep(2)
                                     st.rerun()
                                 else:
-                                    st.error("❌ O servidor do Google Sheets está instável pelo alto tráfego concorrente. Sua nota NÃO foi perdida. Por favor, CLIQUE NOVAMENTE no botão acima para retransmitir.")
+                                    st.error("❌ O servidor do Google Sheets está instável. Sua nota NÃO foi perdida. Por favor, CLIQUE NOVAMENTE no botão.")
