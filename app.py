@@ -8,7 +8,7 @@ import pytz
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
 
-# Inicia a memória local do dispositivo para controle de fluxo leve
+# Inicia a memória local do dispositivo
 if 'concluidos' not in st.session_state:
     st.session_state.concluidos = []
 
@@ -18,7 +18,7 @@ fuso_bruta = pytz.timezone('America/Sao_Paulo')
 def obter_agora():
     return datetime.now(fuso_bruta)
 
-# FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO DO APP (IGNORA PREPOSIÇÕES)
+# FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO
 def tratar_nome_curto(nome_completo):
     if not nome_completo or pd.isna(nome_completo):
         return ""
@@ -36,14 +36,35 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def get_data(aba, ttl_sec=2):
     return conn.read(worksheet=aba, ttl=ttl_sec)
 
+# --- BLINDAGEM DE CONEXÃO (A MEMÓRIA QUE IMPEDE O RESET DA TELA) ---
+if 'df_escalacao_seguro' not in st.session_state:
+    st.session_state.df_escalacao_seguro = pd.DataFrame()
+
 try:
-    # Cache otimizado de 5 minutos evita requisições concorrentes lentas
     df_escalacao = conn.read(worksheet="Escalacao", ttl=300)
     df_escalacao.columns = df_escalacao.columns.astype(str).str.strip().str.lower()
+    st.session_state.df_escalacao_seguro = df_escalacao
 except:
-    st.error("Conectando ao banco de dados... Aguarde.")
-    time.sleep(1)
-    st.rerun()
+    df_escalacao = st.session_state.df_escalacao_seguro
+    if df_escalacao.empty:
+        st.error("Conectando ao banco de dados... Aguarde.")
+        time.sleep(1)
+        st.rerun()
+
+colunas_respostas_obrigatorias = ["Avaliador", "Email_Avaliador", "Alunos", "Nota_Final", "Papel", "Data_Hora"]
+
+if 'df_respostas_seguro' not in st.session_state:
+    st.session_state.df_respostas_seguro = pd.DataFrame(columns=colunas_respostas_obrigatorias)
+
+try:
+    df_respostas = conn.read(worksheet="Respostas", ttl=60)
+    if df_respostas.empty or not all(col in df_respostas.columns for col in colunas_respostas_obrigatorias):
+        df_respostas = pd.DataFrame(columns=colunas_respostas_obrigatorias)
+    st.session_state.df_respostas_seguro = df_respostas
+except:
+    # Se o Google falhar ao mover um slider, usa a memória salva e a tela não pisca!
+    df_respostas = st.session_state.df_respostas_seguro
+
 
 # --- MAPEAMENTO BLINDADO DE COLUNAS (O RADAR) ---
 def buscar_coluna(palavras_chave, evitar=None):
@@ -80,14 +101,6 @@ def verificar_presenca_email(email, coluna_real):
     if not coluna_real or coluna_real not in df_escalacao.columns:
         return False
     return email in df_escalacao[coluna_real].astype(str).str.strip().str.lower().unique()
-
-colunas_respostas_obrigatorias = ["Avaliador", "Email_Avaliador", "Alunos", "Nota_Final", "Papel", "Data_Hora"]
-try:
-    df_respostas = conn.read(worksheet="Respostas", ttl=60)
-    if df_respostas.empty or not all(col in df_respostas.columns for col in colunas_respostas_obrigatorias):
-        df_respostas = pd.DataFrame(columns=colunas_respostas_obrigatorias)
-except:
-    df_respostas = pd.DataFrame(columns=colunas_respostas_obrigatorias)
 
 # --- TRAVA DE LOGOUT E IDENTIFICAÇÃO DE PAPEL ---
 if 'email' not in st.session_state:
@@ -402,7 +415,6 @@ else:
                                 erro_msg_apt = ""
                                 for tentativa in range(3):
                                      try:
-                                         st.cache_data.clear() # Limpeza de cache adicionada
                                          df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
                                          df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
                                          
@@ -414,23 +426,23 @@ else:
                                          df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                          df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
                                          
-                                         df_atualizar_linha = df_atualizar_linha.fillna("") # Blindagem contra NaNs
+                                         df_atualizar_linha = df_atualizar_linha.fillna("")
                                          
                                          conn.update(worksheet="Escalacao", data=df_atualizar_linha)
                                          sucesso_apt = True
                                          break
                                      except Exception as e:
                                          erro_msg_apt = str(e)
-                                         time.sleep(2)
+                                         time.sleep(1)
                                  
                                 if sucesso_apt:
                                      st.session_state.concluidos.append(f"aptidao_{string_grupo_completo}")
                                      st.balloons() 
-                                     st.success("🎉 Ficha de Aptidão registrada e assinada com sucesso! Lote concluído.")
+                                     st.success("🎉 Ficha de Aptidão registrada com sucesso!")
                                      time.sleep(1.5)
                                      st.rerun()
                                 else:
-                                     st.error(f"❌ Erro técnico de comunicação com a planilha: {erro_msg_apt}")
+                                     st.error(f"❌ Erro de comunicação com o Google: {erro_msg_apt}")
 
             elif exibir_formulario_notas:
                 aluno_para_salvar = aluno_alvo_final
@@ -562,14 +574,11 @@ else:
                             with st.spinner("Sincronizando nota com a planilha do Google... Por favor, aguarde."):
                                 sucesso_nota = False
                                 erro_msg = ""
-                                for tentativa in range(3): # Reduzido para 3 tentativas
+                                for tentativa in range(3):
                                     try:
-                                        st.cache_data.clear() # Limpa a memória para forçar uma conexão nova
                                         df_at = conn.read(worksheet="Respostas", ttl=0)
                                         
-                                        # BLINDAGEM CONTRA LIXO DE PLANILHA (Remove linhas que são puramente vazias)
                                         df_at = df_at.dropna(how="all") 
-                                        
                                         if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
                                             df_at = pd.DataFrame(columns=colunas_respostas_obrigatorias)
                                         
@@ -583,20 +592,21 @@ else:
                                         }])
                                         
                                         df_f = pd.concat([df_at, nova_l], ignore_index=True)
-                                        df_f = df_f.fillna("") # Garante que o Google Sheets não trave com células vazias
+                                        df_f = df_f.fillna("") 
                                         
                                         conn.update(worksheet="Respostas", data=df_f)
                                         sucesso_nota = True
                                         break
                                     except Exception as e:
                                         erro_msg = str(e)
-                                        time.sleep(2)
+                                        time.sleep(1)
                                 
                                 if sucesso_nota:
                                     st.session_state.concluidos.append(aluno_para_salvar)
+                                    st.session_state.df_respostas_seguro = df_f # Atualiza a memória de segurança interna!
                                     st.balloons() 
                                     st.success(f"✅ Sucesso! Nota oficial {total}/{v_max} gravada na planilha.")
                                     time.sleep(2)
                                     st.rerun()
                                 else:
-                                    st.error(f"❌ Falha de comunicação com o Google Sheets. Erro técnico: {erro_msg}")
+                                    st.error(f"❌ Falha de comunicação com o Google Sheets: {erro_msg}")
