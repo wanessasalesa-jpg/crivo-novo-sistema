@@ -399,8 +399,10 @@ else:
                         else:
                             with st.spinner("Gravando parecer de aptidão na planilha... Por favor, aguarde."):
                                 sucesso_apt = False
-                                for tentativa in range(5):
+                                erro_msg_apt = ""
+                                for tentativa in range(3):
                                      try:
+                                         st.cache_data.clear() # Limpeza de cache adicionada
                                          df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
                                          df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
                                          
@@ -411,11 +413,15 @@ else:
                                          
                                          df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
                                          df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
+                                         
+                                         df_atualizar_linha = df_atualizar_linha.fillna("") # Blindagem contra NaNs
+                                         
                                          conn.update(worksheet="Escalacao", data=df_atualizar_linha)
                                          sucesso_apt = True
                                          break
-                                     except:
-                                         time.sleep(1 + tentativa)
+                                     except Exception as e:
+                                         erro_msg_apt = str(e)
+                                         time.sleep(2)
                                  
                                 if sucesso_apt:
                                      st.session_state.concluidos.append(f"aptidao_{string_grupo_completo}")
@@ -424,7 +430,7 @@ else:
                                      time.sleep(1.5)
                                      st.rerun()
                                 else:
-                                     st.error("❌ Servidor instável. Por favor, CLIQUE NOVAMENTE no botão.")
+                                     st.error(f"❌ Erro técnico de comunicação com a planilha: {erro_msg_apt}")
 
             elif exibir_formulario_notas:
                 aluno_para_salvar = aluno_alvo_final
@@ -548,33 +554,43 @@ else:
                         st.error("⚠️ Atenção: Existem critérios com nota zero. Verifique se isso está correto.")
                         conf_zero = st.checkbox("Confirmo que as notas zero são intencionais.", key=f"c_zero_{aluno_para_salvar}")
 
-                    # O SPINNER ENTRA EM AÇÃO SÓ NO CLIQUE PARA ESCONDER OS 20 SEGUNDOS DO GOOGLE SHEETS
+                    # O SPINNER ENTRA EM AÇÃO SÓ NO CLIQUE
                     if st.button("🚀 GRAVAR AVALIAÇÃO NO SISTEMA", key=f"btn_save_{aluno_para_salvar}"):
                         if tem_zero and not conf_zero:
                             st.warning("Confirme a caixa de notas zero antes de gravar.")
                         else:
                             with st.spinner("Sincronizando nota com a planilha do Google... Por favor, aguarde."):
                                 sucesso_nota = False
-                                for tentativa in range(5):
+                                erro_msg = ""
+                                for tentativa in range(3): # Reduzido para 3 tentativas
                                     try:
+                                        st.cache_data.clear() # Limpa a memória para forçar uma conexão nova
                                         df_at = conn.read(worksheet="Respostas", ttl=0)
+                                        
+                                        # BLINDAGEM CONTRA LIXO DE PLANILHA (Remove linhas que são puramente vazias)
+                                        df_at = df_at.dropna(how="all") 
+                                        
                                         if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
                                             df_at = pd.DataFrame(columns=colunas_respostas_obrigatorias)
                                         
                                         nova_l = pd.DataFrame([{
-                                            "Avaliador": nome_completo_docente, 
-                                            "Email_Avaliador": email_user, 
-                                            "Alunos": aluno_para_salvar, 
-                                            "Nota_Final": total, 
+                                            "Avaliador": str(nome_completo_docente), 
+                                            "Email_Avaliador": str(email_user), 
+                                            "Alunos": str(aluno_para_salvar), 
+                                            "Nota_Final": float(total), 
                                             "Papel": "Orientador" if eh_orientador else "Banca",
                                             "Data_Hora": obter_agora().strftime("%d/%m/%Y %H:%M")
                                         }])
+                                        
                                         df_f = pd.concat([df_at, nova_l], ignore_index=True)
+                                        df_f = df_f.fillna("") # Garante que o Google Sheets não trave com células vazias
+                                        
                                         conn.update(worksheet="Respostas", data=df_f)
                                         sucesso_nota = True
                                         break
-                                    except:
-                                        time.sleep(1 + tentativa)
+                                    except Exception as e:
+                                        erro_msg = str(e)
+                                        time.sleep(2)
                                 
                                 if sucesso_nota:
                                     st.session_state.concluidos.append(aluno_para_salvar)
@@ -583,4 +599,4 @@ else:
                                     time.sleep(2)
                                     st.rerun()
                                 else:
-                                    st.error("❌ O servidor do Google Sheets está instável. Sua nota NÃO foi perdida. Por favor, CLIQUE NOVAMENTE no botão.")
+                                    st.error(f"❌ Falha de comunicação com o Google Sheets. Erro técnico: {erro_msg}")
