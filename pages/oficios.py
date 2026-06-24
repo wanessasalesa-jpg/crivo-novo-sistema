@@ -11,9 +11,17 @@ st.markdown("""
     <style>
     .titulo-principal { color: #002147; font-family: 'Arial'; font-weight: bold; margin-bottom: 5px; }
     .cartao-ticket { background-color: #ffffff; padding: 20px; border-radius: 8px; border-left: 6px solid #002147; margin-bottom: 15px; box-shadow: 0px 2px 8px rgba(0,0,0,0.08); }
+    
+    /* Cores de Status */
     .status-pendente { background-color: #ffc107; color: #212529; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     .status-aprovado { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     .status-recusado { background-color: #dc3545; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+    
+    /* Cores de Perfil (Gestão Visual) */
+    .perfil-aluno { background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .perfil-professor { background-color: #6f42c1; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .perfil-admin { background-color: #343a40; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    
     .bloco-alerta { background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; border-left: 5px solid #ffeeba; margin-top: 10px; margin-bottom: 15px;}
     </style>
 """, unsafe_allow_html=True)
@@ -36,12 +44,12 @@ st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionai
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
 
-# 4. SISTEMA DE ABAS DINÂMICO (Mostra o contador direto na aba)
+# 4. SISTEMA DE ABAS DINÂMICO
 nome_aba_gestao = f"⚙️ Área da Gestão ({qtd_pendentes} pendentes)" if qtd_pendentes > 0 else "⚙️ Área da Gestão"
 aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", nome_aba_gestao])
 
 # ==========================================
-# ABA 1: SOLICITAÇÃO
+# ABA 1: SOLICITAÇÃO (C/ Trava de E-mail)
 # ==========================================
 with aba_solicitar:
     col_form, col_ajuda = st.columns([2, 1])
@@ -58,6 +66,9 @@ with aba_solicitar:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
         
         with st.form("form_pedido"):
+            nome_solicitante = st.text_input("Nome Completo do Solicitante:")
+            email_solicitante = st.text_input("E-mail para contato:")
+            st.markdown("---")
             assunto = st.text_input("Objetivo / Assunto do Documento:")
             destinatario = st.text_input("Destinatário Final:")
             
@@ -73,14 +84,15 @@ with aba_solicitar:
             enviar = st.form_submit_button("Protocolar Pedido")
             
         if enviar:
-            if not assunto or not destinatario:
-                st.error("Preencha o assunto e o destinatário.")
+            if not nome_solicitante or not email_solicitante or not assunto or not destinatario:
+                st.error("❌ Por favor, preencha todos os campos de texto obrigatórios (Nome, E-mail, Assunto e Destinatário).")
+            elif perfil_solicitante in ["Professor", "Administrativo"] and not email_solicitante.lower().endswith("@afya.com.br"):
+                st.error("❌ Acesso Bloqueado: Para perfis de Professor ou Administrativo, é obrigatório o uso do e-mail institucional (@afya.com.br).")
             elif obrigatorio and arquivo_upload is None:
                 st.error("❌ Operação Recusada: O anexo é obrigatório para o seu perfil.")
             else:
                 id_gerado = f"REQ-{random.randint(1000, 9999)}"
                 vencimento = datetime.now() + timedelta(days=3)
-                
                 arquivo_bytes = arquivo_upload.getvalue() if arquivo_upload else None
                 arquivo_nome = arquivo_upload.name if arquivo_upload else "Sem anexo"
                 
@@ -89,6 +101,8 @@ with aba_solicitar:
                     "data_solicitacao": datetime.now().strftime("%d/%m/%Y %H:%M"),
                     "prazo_limite": vencimento.strftime("%d/%m/%Y"),
                     "perfil": perfil_solicitante,
+                    "nome": nome_solicitante,
+                    "email": email_solicitante,
                     "assunto": assunto,
                     "destinatario": destinatario,
                     "status": "Pendente",
@@ -101,7 +115,7 @@ with aba_solicitar:
                 st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
 
 # ==========================================
-# ABA 2: ACOMPANHAMENTO E REENVIO BLINDADO
+# ABA 2: ACOMPANHAMENTO E REENVIO
 # ==========================================
 with aba_acompanhar:
     st.markdown("### Consultar andamento do Ofício")
@@ -135,8 +149,6 @@ with aba_acompanhar:
                 """, unsafe_allow_html=True)
                 
                 st.markdown("#### 🔄 Enviar Nova Versão")
-                st.write("Faça as correções apontadas no seu arquivo e envie a nova versão abaixo para reanálise.")
-                
                 with st.form(key=f"form_reenvio_{encontrado['id']}"):
                     novo_arquivo = st.file_uploader("Anexar arquivo corrigido:", type=["docx", "pdf"])
                     btn_reenviar = st.form_submit_button("Reenviar para a Secretaria")
@@ -154,25 +166,22 @@ with aba_acompanhar:
                             st.session_state.banco_solicitacoes[indice]["feedback_admin"] = ""
                             st.session_state.banco_solicitacoes[indice]["prazo_limite"] = novo_prazo.strftime("%d/%m/%Y")
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = True
-                            
                             st.rerun() 
         else:
             st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO COM ALERTA DE PENDÊNCIAS
+# ABA 3: ÁREA DA GESTÃO COM CORES
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
         st.markdown("### Acesso Restrito - Equipe Administrativa")
-        
         col_login, col_vazia = st.columns([1, 1])
         with col_login:
             with st.form("login_gestao"):
                 email = st.text_input("E-mail Institucional (@afya.com.br)")
                 senha = st.text_input("Senha de Acesso", type="password")
                 btn_login = st.form_submit_button("Acessar Painel")
-                
                 if btn_login:
                     if email == "gestao@afya.com.br" and senha == "afya2026":
                         st.session_state.gestor_logado = True
@@ -188,7 +197,6 @@ with aba_gestao:
                 st.session_state.gestor_logado = False
                 st.rerun()
                 
-        # --- BALÃO DE AVISO DA FUNCIONÁRIA ---
         if qtd_pendentes > 0:
             st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
         else:
@@ -206,11 +214,28 @@ with aba_gestao:
             for item in reversed(lista_exibicao):
                 indice = st.session_state.banco_solicitacoes.index(item)
                 
+                # --- DEFINIÇÃO DA COR DA ETIQUETA ---
+                if item['perfil'] == "Aluno":
+                    badge = "<span class='perfil-aluno'>🧑‍🎓 Aluno</span>"
+                elif item['perfil'] == "Professor":
+                    badge = "<span class='perfil-professor'>👨‍🏫 Professor</span>"
+                else:
+                    badge = "<span class='perfil-admin'>⚙️ Administrativo</span>"
+                
+                # --- O CARTÃO COM AS CORES APLICADAS ---
                 st.markdown(f"""
                 <div class='cartao-ticket'>
-                    <strong>Protocolo: {item['id']}</strong> | Requerente: {item['perfil']}<br>
+                    <div style='display: flex; justify-content: space-between; align-items: center;'>
+                        <div><strong>Protocolo: {item['id']}</strong></div>
+                        <div style='font-size: 13px; color: #666;'>Requerente: {badge}</div>
+                    </div>
+                    <hr style='margin: 10px 0; border: 0; border-top: 1px solid #e9ecef;'>
+                    <strong>Nome:</strong> {item['nome']} ({item['email']})<br>
                     <strong>Assunto:</strong> {item['assunto']}<br>
-                    <strong>Status:</strong> {item['status']} | <strong>Ofício Gerado:</strong> <span style='color: #002147; font-weight: bold;'>{item['numero_oficio']}</span>
+                    <strong>Destinatário Final:</strong> {item['destinatario']}<br>
+                    <div style='margin-top: 10px;'>
+                        <strong>Status:</strong> {item['status']} | <strong>Ofício Gerado:</strong> <span style='color: #002147; font-weight: bold;'>{item['numero_oficio']}</span>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
