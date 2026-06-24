@@ -31,7 +31,7 @@ st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionai
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
 
-# 4. SISTEMA DE ABAS (Público x Privado)
+# 4. SISTEMA DE ABAS
 aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
 
 # ==========================================
@@ -89,13 +89,13 @@ with aba_solicitar:
                     "numero_oficio": "-",
                     "nome_arquivo": arquivo_nome,
                     "bytes_arquivo": arquivo_bytes,
-                    "feedback_admin": ""
+                    "feedback_admin": "",
+                    "reenviado": False # Etiqueta inicial de controle
                 })
                 st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
-                st.info("Utilize a aba 'Acompanhar Pedido' para verificar o andamento.")
 
 # ==========================================
-# ABA 2: ACOMPANHAMENTO E REENVIO
+# ABA 2: ACOMPANHAMENTO E REENVIO CORRIGIDO
 # ==========================================
 with aba_acompanhar:
     st.markdown("### Consultar andamento do Ofício")
@@ -109,7 +109,11 @@ with aba_acompanhar:
             st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
             st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
             
-            # --- LÓGICA DE REENVIO DE ARQUIVO ---
+            # CONFIRMAÇÃO FIXA DE REENVIO (Aparece mesmo após o reboot da tela)
+            if encontrado.get("reenviado") and encontrado['status'] == "Pendente":
+                st.success("✅ Nova versão enviada com sucesso! O documento retornou para a fila de análise da secretaria.")
+            
+            # --- SE ESTIVER EM EXIGÊNCIA ---
             if encontrado['status'] == "Correção Solicitada" and encontrado['feedback_admin']:
                 st.markdown(f"""
                 <div class='bloco-alerta'>
@@ -129,14 +133,14 @@ with aba_acompanhar:
                         indice = st.session_state.banco_solicitacoes.index(encontrado)
                         novo_prazo = datetime.now() + timedelta(days=3)
                         
+                        # Atualização dos dados na memória central do sistema
                         st.session_state.banco_solicitacoes[indice]["status"] = "Pendente"
                         st.session_state.banco_solicitacoes[indice]["nome_arquivo"] = novo_arquivo.name
                         st.session_state.banco_solicitacoes[indice]["bytes_arquivo"] = novo_arquivo.getvalue()
                         st.session_state.banco_solicitacoes[indice]["feedback_admin"] = ""
                         st.session_state.banco_solicitacoes[indice]["prazo_limite"] = novo_prazo.strftime("%d/%m/%Y")
+                        st.session_state.banco_solicitacoes[indice]["reenviado"] = True # Ativa o aviso fixo
                         
-                        st.success("✅ Nova versão enviada com sucesso! O protocolo voltou para a fila de análise com um novo prazo de 3 dias.")
-                        time.sleep(2)
                         st.rerun()
         else:
             st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
@@ -147,7 +151,6 @@ with aba_acompanhar:
 with aba_gestao:
     if not st.session_state.gestor_logado:
         st.markdown("### Acesso Restrito - Equipe Administrativa")
-        st.write("Digite suas credenciais institucionais para gerenciar a fila de ofícios.")
         
         col_login, col_vazia = st.columns([1, 1])
         with col_login:
@@ -161,11 +164,7 @@ with aba_gestao:
                         st.session_state.gestor_logado = True
                         st.rerun()
                     else:
-                        st.error("Credenciais inválidas ou acesso não autorizado.")
-            
-            if st.button("Receber nova senha por e-mail"):
-                st.success("Simulação: Um link de acesso/senha foi enviado para o seu e-mail corporativo.")
-                
+                        st.error("Credenciais inválidas.")
     else:
         col_tit, col_sair = st.columns([4, 1])
         with col_tit:
@@ -195,8 +194,14 @@ with aba_gestao:
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # CHAVE DINÂMICA (Garante a quebra de cache ao reajustar o arquivo)
                 if item.get("bytes_arquivo"):
-                    st.download_button(label=f"📥 Baixar Documento Enviado ({item['nome_arquivo']})", data=item["bytes_arquivo"], file_name=item["nome_arquivo"], key=f"dl_{item['id']}")
+                    st.download_button(
+                        label=f"📥 Baixar Documento Enviado ({item['nome_arquivo']})", 
+                        data=item["bytes_arquivo"], 
+                        file_name=item["nome_arquivo"], 
+                        key=f"dl_{item['id']}_{item['nome_arquivo']}"
+                    )
                 
                 if item["status"] == "Pendente":
                     col1, col2 = st.columns(2)
@@ -206,16 +211,18 @@ with aba_gestao:
                             oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year} AFYAMARABÁ/AFYA/COORD. DE CURSO"
                             st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
                             st.session_state.banco_solicitacoes[indice]["numero_oficio"] = oficio_gerado
+                            st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                             st.rerun()
                             
                     with col2:
                         with st.expander("❌ Solicitar Correção ao Usuário"):
-                            feedback = st.text_area("Aponte os erros para correção (ex: faltou assinatura):", key=f"fb_{item['id']}")
+                            feedback = st.text_area("Aponte os erros para correção:", key=f"fb_{item['id']}")
                             if st.button("Devolver Documento", key=f"dev_{item['id']}"):
                                 if not feedback:
                                     st.warning("Escreva o motivo antes de devolver.")
                                 else:
                                     st.session_state.banco_solicitacoes[indice]["status"] = "Correção Solicitada"
                                     st.session_state.banco_solicitacoes[indice]["feedback_admin"] = feedback
+                                    st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                                     st.rerun()
                 st.markdown("---")
