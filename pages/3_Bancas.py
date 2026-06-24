@@ -50,7 +50,6 @@ def liberar_acesso_professor(email_prof, perfil_prof):
 if "bancos_avaliacoes" not in st.session_state:
     st.session_state.bancos_avaliacoes = [] 
 
-# BLINDAGEM ANTI-TRAVAMENTO (Limpa a memória se detectar o formato antigo)
 if "permissoes_acesso" not in st.session_state or isinstance(st.session_state.permissoes_acesso.get("wanessa.almeida@afya.com.br"), str):
     st.session_state.permissoes_acesso = {
         "wanessa.almeida@afya.com.br": {"perfil": "Administrador", "modulos": ["Todos"]}
@@ -75,12 +74,11 @@ def tela_login():
             submit = st.form_submit_button("Entrar no Sistema", use_container_width=True)
             
             if submit:
-                if not email.endswith("@afya.com.br"):
-                    st.error("Acesso restrito a e-mails institucionais da Afya.")
+                # Nova validação limpa e direta
+                if email not in st.session_state.permissoes_acesso:
+                    st.error("Email não cadastrado. Procure a coordenação do módulo.")
                 elif senha != "afya2026": 
                     st.error("Senha incorreta.")
-                elif email not in st.session_state.permissoes_acesso:
-                    st.error("O seu e-mail não possui permissão de acesso cadastrada. Procure a administração.")
                 else:
                     dados_acesso = st.session_state.permissoes_acesso[email]
                     nome_formatado = formatar_nome_email(email)
@@ -109,7 +107,6 @@ def tela_administracao():
     with st.form("form_add_coord", clear_on_submit=True):
         novo_email_coord = st.text_input("E-mail do Coordenador (@afya.com.br):").lower().strip()
         
-        # TRADUÇÃO APLICADA: Parâmetro placeholder substitui o inglês "Choose an option"
         modulos_delegados = st.multiselect(
             "Selecione os módulos sob responsabilidade deste coordenador:", 
             ["TCC I", "TCC II", "MCM IV", "MCM V", "PIEPE"],
@@ -131,7 +128,6 @@ def tela_administracao():
                 
     st.markdown("#### Coordenadores Cadastrados")
     for email, dados in st.session_state.permissoes_acesso.items():
-        # BLINDAGEM: Verifica se 'dados' é de fato um dicionário antes de tentar ler o perfil
         if isinstance(dados, dict) and dados.get("perfil") == "Coordenação":
             lista_mods = ", ".join(dados.get("modulos", []))
             st.write(f"- 👤 **{formatar_nome_email(email)}** ({email}) ➔ *Módulos: {lista_mods}*")
@@ -243,7 +239,7 @@ def tela_coordenacao():
                             
                             st.toast("✅ Banca criada com sucesso e acessos liberados!", icon="🎉")
 
-    # --- ABA DE GERENCIAMENTO ---
+    # --- ABA DE GERENCIAMENTO E EDIÇÃO ---
     with aba_gerenciar:
         if not st.session_state.bancos_avaliacoes:
             st.info("Nenhuma banca cadastrada.")
@@ -267,25 +263,77 @@ def tela_coordenacao():
                 classe_cor = obter_classe_cor(banca['modulo'])
                 info_piepe = f" | Formato: {banca['formato_piepe']}" if banca['modulo'] == "PIEPE" else ""
                 
-                st.markdown(f"""
-                <div class='cartao-banca'>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <div><span class='{classe_cor}'>{banca['modulo']}</span> <span style='color: #666; font-size: 14px;'>{info_piepe} | {banca['data']}</span></div>
-                        <div style='font-size: 13px; color: #800040;'><b>Status:</b> {banca['status']}</div>
-                    </div>
-                    <h4 style='margin-top: 10px; margin-bottom: 5px;'>{banca['titulo']}</h4>
-                    <strong>Orientador:</strong> {banca['orientador_nome']}<br>
-                    <strong>Avaliadores:</strong> {banca['avaliador_1_nome']} 
-                    {f" | {banca['avaliador_2_nome']}" if banca['avaliador_2_nome'] else ""}
-                    {f" | {banca['avaliador_sup_nome']} (Suplente)" if banca['avaliador_sup_nome'] else ""}
-                    <hr style='margin: 10px 0;'>
-                    <strong>Alunos ({len(banca['alunos'])}):</strong> {', '.join(banca['alunos'])}
-                </div>
-                """, unsafe_allow_html=True)
+                # HTML blindado sem recuos para não virar bloco de código
+                cartao_html = f"""
+<div class='cartao-banca'>
+    <div style='display: flex; justify-content: space-between;'>
+        <div><span class='{classe_cor}'>{banca['modulo']}</span> <span style='color: #666; font-size: 14px;'>{info_piepe} | {banca['data']}</span></div>
+        <div style='font-size: 13px; color: #800040;'><b>Status:</b> {banca['status']}</div>
+    </div>
+    <h4 style='margin-top: 10px; margin-bottom: 5px;'>{banca['titulo']}</h4>
+    <strong>Orientador:</strong> {banca['orientador_nome']}<br>
+    <strong>Avaliadores:</strong> {banca['avaliador_1_nome']} 
+    {f" | {banca['avaliador_2_nome']}" if banca['avaliador_2_nome'] else ""}
+    {f" | {banca['avaliador_sup_nome']} (Suplente)" if banca['avaliador_sup_nome'] else ""}
+    <hr style='margin: 10px 0;'>
+    <strong>Alunos ({len(banca['alunos'])}):</strong> {', '.join(banca['alunos'])}
+</div>
+"""
+                st.markdown(cartao_html, unsafe_allow_html=True)
                 
-                if st.button("🗑️ Excluir Banca", key=f"del_{banca['id']}"):
-                    st.session_state.bancos_avaliacoes.pop(indice_real)
-                    st.rerun()
+                col_edit, col_del = st.columns([1, 1])
+                with col_del:
+                    if st.button("🗑️ Excluir Banca", key=f"del_{banca['id']}"):
+                        st.session_state.bancos_avaliacoes.pop(indice_real)
+                        forçar_recarregamento_tela()
+                        
+                # O painel retrátil de Edição
+                with st.expander(f"✏️ Editar Dados da Banca"):
+                    with st.form(key=f"form_edit_{banca['id']}"):
+                        try:
+                            data_obj = datetime.strptime(banca['data'], "%d/%m/%Y").date()
+                        except:
+                            data_obj = datetime.now().date()
+                            
+                        edit_data = st.date_input("Data da Defesa:", value=data_obj, format="DD/MM/YYYY")
+                        edit_titulo = st.text_input("Título do Projeto/Trabalho:", value=banca['titulo'])
+                        
+                        col_e1, col_e2 = st.columns(2)
+                        with col_e1:
+                            edit_ori = st.text_input("E-mail Orientador:", value=banca['orientador_email'])
+                            edit_av1 = st.text_input("E-mail Avaliador 1:", value=banca['avaliador_1_email'])
+                        with col_e2:
+                            edit_av2 = st.text_input("E-mail Avaliador 2:", value=banca.get('avaliador_2_email', ''))
+                            edit_sup = st.text_input("E-mail Avaliador Suplente:", value=banca.get('avaliador_sup_email', ''))
+                            
+                        edit_alunos = st.text_area("Alunos (um por linha):", value="\n".join(banca['alunos']), height=100)
+                        
+                        if st.form_submit_button("Salvar Alterações"):
+                            alunos_atualizados = [nome.strip() for nome in edit_alunos.split('\n') if nome.strip()]
+                            
+                            # Atualiza os dados no banco central
+                            st.session_state.bancos_avaliacoes[indice_real].update({
+                                "data": edit_data.strftime("%d/%m/%Y"),
+                                "titulo": edit_titulo,
+                                "orientador_email": edit_ori,
+                                "orientador_nome": formatar_nome_email(edit_ori),
+                                "avaliador_1_email": edit_av1,
+                                "avaliador_1_nome": formatar_nome_email(edit_av1),
+                                "avaliador_2_email": edit_av2,
+                                "avaliador_2_nome": formatar_nome_email(edit_av2) if edit_av2 else "",
+                                "avaliador_sup_email": edit_sup,
+                                "avaliador_sup_nome": formatar_nome_email(edit_sup) if edit_sup else "",
+                                "alunos": alunos_atualizados
+                            })
+                            
+                            # Garante que, se os professores foram trocados, os novos ganham acesso
+                            liberar_acesso_professor(edit_ori, "Orientador")
+                            liberar_acesso_professor(edit_av1, "Avaliador")
+                            liberar_acesso_professor(edit_av2, "Avaliador")
+                            liberar_acesso_professor(edit_sup, "Avaliador")
+                            
+                            st.toast("✅ Banca atualizada com sucesso!", icon="🔄")
+                            forçar_recarregamento_tela()
 
 # ==========================================
 # PAINEL 2: AVALIADOR 
@@ -316,7 +364,7 @@ def tela_orientador():
     st.info("🚧 Módulo do Diário de Bordo (Atas Mensais) e Fechamento de Notas será construído aqui!")
 
 # ==========================================
-# ROTEADOR DE TELAS
+# ROTEADOR DE TELAS (O CÉREBRO DA NAVEGAÇÃO)
 # ==========================================
 if st.session_state.usuario_bancas is None:
     tela_login()
