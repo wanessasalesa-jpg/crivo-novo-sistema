@@ -1,9 +1,7 @@
 import streamlit as st
 import random
 import time
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import pandas as pd
 from datetime import datetime, timedelta
 
 # 1. CONFIGURAÇÃO DA PÁGINA
@@ -29,30 +27,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. MOTOR DE E-MAILS (Com proteção contra erros caso a senha não esteja configurada ainda)
+# 3. SIMULADOR DE MOTOR DE E-MAILS
 def enviar_email_notificacao(destinatario, assunto, mensagem_html):
-    try:
-        # Puxa as credenciais do cofre do Streamlit (Secrets)
-        email_remetente = st.secrets["EMAIL_SISTEMA"]
-        senha_remetente = st.secrets["SENHA_SISTEMA"]
-        
-        msg = MIMEMultipart()
-        msg['From'] = email_remetente
-        msg['To'] = destinatario
-        msg['Subject'] = assunto
-        msg.attach(MIMEText(mensagem_html, 'html'))
-        
-        # Configuração padrão do Gmail (pode ser ajustada para Outlook se necessário)
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(email_remetente, senha_remetente)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        # Se falhar (ex: falta de configuração), o sistema não quebra, apenas avisa no console
-        print(f"Alerta: Falha no envio de e-mail simulado. Erro: {e}")
-        return False
+    # Simulação para fase de testes
+    print(f"[LOG SISTEMA] E-mail simulado para {destinatario} | Assunto: {assunto}")
+    return True
 
 # 4. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE SESSÃO
 if "banco_solicitacoes" not in st.session_state:
@@ -96,6 +75,13 @@ with aba_solicitar:
         with st.form("form_pedido"):
             nome_solicitante = st.text_input("Nome Completo do Solicitante:")
             email_solicitante = st.text_input("E-mail para contato:")
+            
+            # --- NOVO CAMPO: SETOR SOLICITANTE ---
+            if perfil_solicitante in ["Professor", "Administrativo"]:
+                setor_solicitante = st.text_input("Setor Solicitante (Ex: Coordenação de Medicina, Diretoria):")
+            else:
+                setor_solicitante = "Não se aplica (Aluno)"
+                
             st.markdown("---")
             assunto = st.text_input("Objetivo / Assunto do Documento:")
             destinatario = st.text_input("Destinatário Final:")
@@ -114,6 +100,8 @@ with aba_solicitar:
         if enviar:
             if not nome_solicitante or not email_solicitante or not assunto or not destinatario:
                 st.error("❌ Por favor, preencha todos os campos de texto obrigatórios (Nome, E-mail, Assunto e Destinatário).")
+            elif perfil_solicitante in ["Professor", "Administrativo"] and not setor_solicitante:
+                st.error("❌ Por favor, preencha o campo 'Setor Solicitante'.")
             elif perfil_solicitante in ["Professor", "Administrativo"] and not email_solicitante.lower().endswith("@afya.com.br"):
                 st.error("❌ Acesso Bloqueado: Para perfis de Professor ou Administrativo, é obrigatório o uso do e-mail institucional (@afya.com.br).")
             elif obrigatorio and arquivo_upload is None:
@@ -131,6 +119,7 @@ with aba_solicitar:
                     "perfil": perfil_solicitante,
                     "nome": nome_solicitante,
                     "email": email_solicitante,
+                    "setor": setor_solicitante, # Gravando o setor!
                     "assunto": assunto,
                     "destinatario": destinatario,
                     "status": "Pendente",
@@ -141,12 +130,10 @@ with aba_solicitar:
                     "reenviado": False
                 })
                 
-                # --- DISPARO DE E-MAIL 1: RECEBIMENTO ---
-                corpo_email = f"<h3>Olá, {nome_solicitante}!</h3><p>Sua solicitação de ofício foi recebida pela secretaria.</p><p><strong>Seu protocolo é: {id_gerado}</strong></p><p>O prazo para devolutiva é até {vencimento.strftime('%d/%m/%Y')}. Guarde este número para consultar o andamento no sistema.</p>"
+                corpo_email = f"Recebimento de protocolo {id_gerado}"
                 enviar_email_notificacao(email_solicitante, f"Protocolo Recebido: {id_gerado}", corpo_email)
                 
                 st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
-                st.info("✉️ Uma confirmação com o seu número de protocolo foi enviada para o seu e-mail.")
 
 # ==========================================
 # ABA 2: ACOMPANHAMENTO E REENVIO
@@ -205,7 +192,7 @@ with aba_acompanhar:
             st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO COM CORES E DISPAROS
+# ABA 3: ÁREA DA GESTÃO COM RELATÓRIOS
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -230,7 +217,33 @@ with aba_gestao:
             if st.button("Sair (Logout)"):
                 st.session_state.gestor_logado = False
                 st.rerun()
+        
+        # --- NOVO BLOCO: GERADOR DE RELATÓRIOS (EXCEL/CSV) ---
+        with st.expander("📊 Relatórios e Prestação de Contas (Exportar Dados)"):
+            st.write("Baixe a planilha completa com o histórico de todos os ofícios solicitados e emitidos.")
+            if not st.session_state.banco_solicitacoes:
+                st.info("Ainda não há dados suficientes para gerar um relatório.")
+            else:
+                # Transforma a lista de dicionários em uma Tabela do Pandas
+                df = pd.DataFrame(st.session_state.banco_solicitacoes)
+                # Seleciona apenas as colunas que importam para a planilha (ignora os bytes do arquivo)
+                df_export = df[['id', 'data_solicitacao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']]
+                # Renomeia as colunas para o Excel ficar bonito
+                df_export.columns = ['Protocolo', 'Data Solicitação', 'Perfil', 'Nome', 'Setor Solicitante', 'Assunto', 'Destinatário Final', 'Status Atual', 'Nº Oficial Gerado']
                 
+                # Converte para CSV usando utf-8-sig para os acentos ficarem perfeitos no Excel Brasileiro
+                csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
+                
+                st.download_button(
+                    label="📥 Baixar Relatório em Excel (CSV)",
+                    data=csv_data,
+                    file_name=f"Relatorio_Oficios_{datetime.now().strftime('%d_%m_%Y')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+        st.markdown("---")
+        
+        # --- PAINEL DE FILA DE TRABALHO ---
         if qtd_pendentes > 0:
             st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
         else:
@@ -248,7 +261,6 @@ with aba_gestao:
             for item in reversed(lista_exibicao):
                 indice = st.session_state.banco_solicitacoes.index(item)
                 
-                # --- DEFINIÇÃO DA COR DA ETIQUETA ---
                 if item['perfil'] == "Aluno":
                     badge = "<span class='perfil-aluno'>🧑‍🎓 Aluno</span>"
                 elif item['perfil'] == "Professor":
@@ -256,7 +268,7 @@ with aba_gestao:
                 else:
                     badge = "<span class='perfil-admin'>⚙️ Administrativo</span>"
                 
-                # --- O CARTÃO ---
+                # Exibindo o Setor no Cartão
                 st.markdown(f"""
                 <div class='cartao-ticket'>
                     <div style='display: flex; justify-content: space-between; align-items: center;'>
@@ -265,6 +277,7 @@ with aba_gestao:
                     </div>
                     <hr style='margin: 10px 0; border: 0; border-top: 1px solid #e9ecef;'>
                     <strong>Nome:</strong> {item['nome']} ({item['email']})<br>
+                    <strong>Setor:</strong> {item.get('setor', 'Não informado')}<br>
                     <strong>Assunto:</strong> {item['assunto']}<br>
                     <strong>Destinatário Final:</strong> {item['destinatario']}<br>
                     <div style='margin-top: 10px;'>
@@ -291,10 +304,7 @@ with aba_gestao:
                             st.session_state.banco_solicitacoes[indice]["numero_oficio"] = oficio_gerado
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                             
-                            # --- DISPARO DE E-MAIL 2: APROVAÇÃO ---
-                            corpo_email = f"<h3>Boas notícias, {item['nome']}!</h3><p>Seu ofício foi analisado e aprovado.</p><p><strong>Número Oficial Emitido: {oficio_gerado}</strong></p><p>O documento já pode ser utilizado.</p>"
-                            enviar_email_notificacao(item['email'], f"Ofício Aprovado: {item['id']}", corpo_email)
-                            
+                            enviar_email_notificacao(item['email'], f"Ofício Aprovado: {item['id']}", "Aprovação simulada")
                             st.rerun()
                             
                     with col2:
@@ -308,10 +318,7 @@ with aba_gestao:
                                     st.session_state.banco_solicitacoes[indice]["feedback_admin"] = feedback
                                     st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                                     
-                                    # --- DISPARO DE E-MAIL 3: EXIGÊNCIA ---
-                                    corpo_email = f"<h3>Atenção, {item['nome']}.</h3><p>Sua solicitação de ofício ({item['id']}) foi devolvida pela secretaria para ajustes.</p><p><strong>Motivo apontado:</strong><br>{feedback}</p><p>Acesse o sistema e envie a nova versão corrigida.</p>"
-                                    enviar_email_notificacao(item['email'], f"Correção Solicitada: {item['id']}", corpo_email)
-                                    
+                                    enviar_email_notificacao(item['email'], f"Correção Solicitada: {item['id']}", "Recusa simulada")
                                     st.rerun()
                                     
                 elif item["status"] == "Correção Solicitada":
