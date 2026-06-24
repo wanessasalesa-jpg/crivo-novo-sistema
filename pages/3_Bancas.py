@@ -1,16 +1,16 @@
 import streamlit as st
 import uuid
 import pandas as pd
+import io
 from datetime import datetime
 
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Portal de Bancas - CRIVO", page_icon="🎓", layout="wide")
 
-# 2. DESIGN CUSTOMIZADO (CSS)
+# 2. DESIGN CUSTOMIZADO (CSS) E CORES DOS MÓDULOS
 st.markdown("""
     <style>
     .titulo-principal { color: #800040; font-family: 'Arial'; font-weight: bold; margin-bottom: 5px; }
-    /* Margem inferior reduzida para os botões ficarem "colados" no cartão */
     .cartao-banca { background-color: #ffffff; padding: 20px; border-radius: 8px; border-left: 6px solid #800040; margin-bottom: 5px; box-shadow: 0px 2px 8px rgba(0,0,0,0.08); }
     
     .badge-tcci { background-color: #3498db; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
@@ -180,22 +180,24 @@ def tela_coordenacao():
                     st.markdown("---")
                     st.write("**Composição da Banca Avaliadora**")
                     
+                    # REGRA DE NEGÓCIO ATUALIZADA
                     if modulo_selecionado in ["TCC I", "MCM IV"]:
-                        st.write("*Regra do Módulo: Dois avaliadores obrigatórios. Sem suplente.*")
+                        st.write("*Regra do Módulo: Dois avaliadores titulares obrigatórios. Sem suplente.*")
                         col_b1, col_b2 = st.columns(2)
                         with col_b1:
-                            avaliador_1_email = st.text_input("E-mail Avaliador 1 (@afya.com.br):").lower().strip()
+                            avaliador_1_email = st.text_input("E-mail Avaliador Titular 1 (@afya.com.br):").lower().strip()
                         with col_b2:
-                            avaliador_2_email = st.text_input("E-mail Avaliador 2 (@afya.com.br):").lower().strip()
+                            avaliador_2_email = st.text_input("E-mail Avaliador Titular 2 (@afya.com.br):").lower().strip()
                         avaliador_sup_email = ""
                     else:
-                        st.write("*Regra do Módulo: Um avaliador titular e um suplente.*")
-                        col_b1, col_b2 = st.columns(2)
+                        st.write("*Regra do Módulo: Dois avaliadores titulares obrigatórios e um suplente.*")
+                        col_b1, col_b2, col_b3 = st.columns(3)
                         with col_b1:
-                            avaliador_1_email = st.text_input("E-mail Avaliador Titular (@afya.com.br):").lower().strip()
+                            avaliador_1_email = st.text_input("E-mail Titular 1 (@afya.com.br):").lower().strip()
                         with col_b2:
-                            avaliador_sup_email = st.text_input("E-mail Avaliador Suplente (@afya.com.br):").lower().strip()
-                        avaliador_2_email = ""
+                            avaliador_2_email = st.text_input("E-mail Titular 2 (@afya.com.br):").lower().strip()
+                        with col_b3:
+                            avaliador_sup_email = st.text_input("E-mail Suplente (@afya.com.br):").lower().strip()
                         
                     st.markdown("---")
                     st.write("**Integrantes do Grupo**")
@@ -205,8 +207,9 @@ def tela_coordenacao():
                     btn_salvar = st.form_submit_button("Salvar e Gerar Banca")
                     
                     if btn_salvar:
-                        if not titulo or not orientador_email or not avaliador_1_email or not lista_alunos:
-                            st.error("Preencha todos os campos obrigatórios e e-mails.")
+                        # Validação atualizada exigindo os dois avaliadores
+                        if not titulo or not orientador_email or not avaliador_1_email or not avaliador_2_email or not lista_alunos:
+                            st.error("Preencha todos os campos obrigatórios (incluindo os dois avaliadores titulares).")
                         else:
                             alunos_processados = [nome.strip() for nome in lista_alunos.split('\n') if nome.strip()]
                             nova_banca = {
@@ -220,7 +223,7 @@ def tela_coordenacao():
                                 "avaliador_1_email": avaliador_1_email,
                                 "avaliador_1_nome": formatar_nome_email(avaliador_1_email),
                                 "avaliador_2_email": avaliador_2_email,
-                                "avaliador_2_nome": formatar_nome_email(avaliador_2_email) if avaliador_2_email else "",
+                                "avaliador_2_nome": formatar_nome_email(avaliador_2_email),
                                 "avaliador_sup_email": avaliador_sup_email,
                                 "avaliador_sup_nome": formatar_nome_email(avaliador_sup_email) if avaliador_sup_email else "",
                                 "alunos": alunos_processados,
@@ -234,7 +237,8 @@ def tela_coordenacao():
                             liberar_acesso_professor(orientador_email, "Orientador")
                             liberar_acesso_professor(avaliador_1_email, "Avaliador")
                             liberar_acesso_professor(avaliador_2_email, "Avaliador")
-                            liberar_acesso_professor(avaliador_sup_email, "Avaliador")
+                            if avaliador_sup_email:
+                                liberar_acesso_professor(avaliador_sup_email, "Avaliador")
                             
                             st.toast("✅ Banca criada com sucesso e acessos liberados!", icon="🎉")
 
@@ -262,12 +266,10 @@ def tela_coordenacao():
                 classe_cor = obter_classe_cor(banca['modulo'])
                 info_piepe = f" | Formato: {banca['formato_piepe']}" if banca['modulo'] == "PIEPE" else ""
                 
-                # Montagem dos nomes dos avaliadores numa única linha
                 avaliadores_str = banca['avaliador_1_nome']
                 if banca.get('avaliador_2_nome'): avaliadores_str += f" | {banca['avaliador_2_nome']}"
                 if banca.get('avaliador_sup_nome'): avaliadores_str += f" | {banca['avaliador_sup_nome']} (Suplente)"
                 
-                # HTML em linha única para evitar quebra de bloco de código no Streamlit
                 cartao_html = (
                     f"<div class='cartao-banca'>"
                     f"<div style='display: flex; justify-content: space-between; align-items: center;'>"
@@ -283,7 +285,6 @@ def tela_coordenacao():
                 )
                 st.markdown(cartao_html, unsafe_allow_html=True)
                 
-                # Botões de Ação Compactos e Alinhados
                 col_btn1, col_btn2, col_vazia = st.columns([2, 2, 6])
                 edit_key = f"edit_{banca['id']}"
                 
@@ -299,7 +300,6 @@ def tela_coordenacao():
                         st.session_state.bancos_avaliacoes.pop(indice_real)
                         st.rerun()
                 
-                # Formulário de edição que se expande elegantemente
                 if st.session_state[edit_key]:
                     with st.container(border=True):
                         st.markdown("#### ✏️ Alterar Dados da Banca")
@@ -342,13 +342,14 @@ def tela_coordenacao():
                                 liberar_acesso_professor(edit_ori, "Orientador")
                                 liberar_acesso_professor(edit_av1, "Avaliador")
                                 liberar_acesso_professor(edit_av2, "Avaliador")
-                                liberar_acesso_professor(edit_sup, "Avaliador")
+                                if edit_sup:
+                                    liberar_acesso_professor(edit_sup, "Avaliador")
                                 
-                                st.session_state[edit_key] = False # Fecha o formulário automaticamente
+                                st.session_state[edit_key] = False 
                                 st.toast("✅ Banca atualizada com sucesso!", icon="🔄")
                                 forçar_recarregamento_tela()
                 
-                st.write("") # Espaçamento final
+                st.write("") 
 
 # ==========================================
 # PAINEL 2: AVALIADOR 
