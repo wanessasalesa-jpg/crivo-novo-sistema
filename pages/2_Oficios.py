@@ -1,6 +1,7 @@
 import streamlit as st
 import random
-import pandas as pd
+import io
+import csv
 from datetime import datetime, timedelta
 
 # 1. CONFIGURAÇÃO DA PÁGINA
@@ -44,7 +45,7 @@ st.markdown("<h2 class='titulo-principal'>📄 Portal de Emissão de Ofícios</h
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
 
-# 5. SISTEMA DE ABAS (Nome congelado para a tela não pular)
+# 5. SISTEMA DE ABAS
 aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
 
 # ==========================================
@@ -152,7 +153,6 @@ with aba_acompanhar:
             st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
             st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
             
-            # Proteção ao ler a data de emissão
             data_emissao = encontrado.get('data_emissao', '-')
             if data_emissao != "-":
                 st.markdown(f"**Data de Emissão (Aprovação):** {data_emissao}")
@@ -191,7 +191,7 @@ with aba_acompanhar:
             st.error(f"Protocolo '{st.session_state.protocolo_buscado}' não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO
+# ABA 3: ÁREA DA GESTÃO COM GERADOR NATIVO
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -224,22 +224,35 @@ with aba_gestao:
             if not st.session_state.banco_solicitacoes:
                 st.info("Ainda não há dados suficientes para gerar um relatório.")
             else:
-                df = pd.DataFrame(st.session_state.banco_solicitacoes)
+                # GERADOR NATIVO (100% Livre de Pandas e à prova de falhas)
+                output = io.StringIO()
+                # O delimitador ';' é o segredo para o Excel Brasileiro abrir em colunas automáticas
+                writer = csv.writer(output, delimiter=';') 
                 
-                # --- BLINDAGEM DO PANDAS (Protege contra protocolos antigos) ---
-                colunas_necessarias = ['id', 'data_solicitacao', 'data_emissao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']
-                for col in colunas_necessarias:
-                    if col not in df.columns:
-                        df[col] = '-'
-                        
-                df_export = df[colunas_necessarias]
-                df_export.columns = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
+                # Cabeçalhos da Tabela
+                colunas = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
+                writer.writerow(colunas)
                 
-                # Gerador CSV blindado para o Excel Brasileiro (Ponto e Vírgula)
-                csv_data = df_export.to_csv(index=False, sep=';').encode('utf-8-sig')
+                # Preenchendo as linhas (Com blindagem .get() para evitar erros com dados velhos)
+                for item in st.session_state.banco_solicitacoes:
+                    writer.writerow([
+                        item.get('id', '-'),
+                        item.get('data_solicitacao', '-'),
+                        item.get('data_emissao', '-'),
+                        item.get('perfil', '-'),
+                        item.get('nome', 'Não informado'),
+                        item.get('setor', 'Não informado'),
+                        item.get('assunto', 'Não informado'),
+                        item.get('destinatario', 'Não informado'),
+                        item.get('status', '-'),
+                        item.get('numero_oficio', '-')
+                    ])
+                
+                # Codificação 'utf-8-sig' garante que os acentos fiquem perfeitos no Windows/Excel
+                csv_data = output.getvalue().encode('utf-8-sig')
                 
                 st.download_button(
-                    label="📥 Baixar Relatório Completo",
+                    label="📥 Baixar Relatório Completo (Excel/CSV)",
                     data=csv_data,
                     file_name=f"Relatorio_Oficios_Afya_{datetime.now().strftime('%d_%m_%Y')}.csv",
                     mime="text/csv",
