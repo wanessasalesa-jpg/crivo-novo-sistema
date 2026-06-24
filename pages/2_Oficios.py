@@ -25,12 +25,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. SIMULADOR DE MOTOR DE E-MAILS
+# 3. FUNÇÃO ANTI-TRAVAMENTO DE VERSÃO (Garante compatibilidade com qualquer servidor)
+def forçar_recarregamento_tela():
+    try:
+        st.rerun()
+    except AttributeError:
+        st.experimental_rerun()
+
+# 4. SIMULADOR DE MOTOR DE E-MAILS
 def enviar_email_notificacao(destinatario, assunto, mensagem_html):
     print(f"[LOG SISTEMA] E-mail simulado para {destinatario} | Assunto: {assunto}")
     return True
 
-# 4. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE SESSÃO
+# 5. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE SESSÃO
 if "banco_solicitacoes" not in st.session_state:
     st.session_state.banco_solicitacoes = []
 if "contador_oficio_oficial" not in st.session_state:
@@ -45,7 +52,7 @@ st.markdown("<h2 class='titulo-principal'>📄 Portal de Emissão de Ofícios</h
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
 
-# 5. SISTEMA DE ABAS
+# 6. SISTEMA DE ABAS (Nome fixo para estabilidade absoluta)
 aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
 
 # ==========================================
@@ -127,7 +134,7 @@ with aba_solicitar:
                 st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
 
 # ==========================================
-# ABA 2: ACOMPANHAMENTO E REENVIO
+# ABA 2: ACOMPANHAMENTO E REENVIO BUSCA INTELIGENTE
 # ==========================================
 with aba_acompanhar:
     st.markdown("### Consultar andamento do Ofício")
@@ -142,6 +149,7 @@ with aba_acompanhar:
             submit_busca = st.form_submit_button("Buscar Protocolo")
             
         if submit_busca:
+            # Filtro invisível: remove espaços vazios e transforma tudo em maiúsculas
             st.session_state.protocolo_buscado = codigo_busca.strip().upper()
             
     if st.session_state.protocolo_buscado:
@@ -186,12 +194,12 @@ with aba_acompanhar:
                             st.session_state.banco_solicitacoes[indice]["feedback_admin"] = ""
                             st.session_state.banco_solicitacoes[indice]["prazo_limite"] = novo_prazo.strftime("%d/%m/%Y")
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = True
-                            st.rerun() 
+                            forçar_recarregamento_tela()
         else:
             st.error(f"Protocolo '{st.session_state.protocolo_buscado}' não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO COM GERADOR NATIVO
+# ABA 3: ÁREA DA GESTÃO (EXCEL SEGURO)
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -201,11 +209,11 @@ with aba_gestao:
             with st.form("login_gestao"):
                 email = st.text_input("E-mail Institucional (@afya.com.br)")
                 senha = st.text_input("Senha de Acesso", type="password")
-                btn_login = st.form_submit_button("Acessar Painel")
+                btn_login = st.form_submit_button("Acessar Panel")
                 if btn_login:
                     if email == "gestao@afya.com.br" and senha == "afya2026":
                         st.session_state.gestor_logado = True
-                        st.rerun()
+                        forçar_recarregamento_tela()
                     else:
                         st.error("Credenciais inválidas.")
     else:
@@ -213,27 +221,23 @@ with aba_gestao:
         
         col_tit, col_sair = st.columns([4, 1])
         with col_tit:
-            st.markdown(f"### ⚙️ Painel de Aprovação ({qtd_pendentes} pendentes)")
+            st.markdown(f"### ⚙️ Painel de Trabalho ({qtd_pendentes} pendentes)")
         with col_sair:
             if st.button("Sair (Logout)"):
                 st.session_state.gestor_logado = False
-                st.rerun()
+                forçar_recarregamento_tela()
         
         with st.expander("📊 Relatórios e Prestação de Contas (Exportar para Excel)"):
             st.write("Baixe a planilha estruturada com o histórico de todos os ofícios, tempos de resposta e emissões.")
             if not st.session_state.banco_solicitacoes:
                 st.info("Ainda não há dados suficientes para gerar um relatório.")
             else:
-                # GERADOR NATIVO (100% Livre de Pandas e à prova de falhas)
                 output = io.StringIO()
-                # O delimitador ';' é o segredo para o Excel Brasileiro abrir em colunas automáticas
                 writer = csv.writer(output, delimiter=';') 
                 
-                # Cabeçalhos da Tabela
                 colunas = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
                 writer.writerow(colunas)
                 
-                # Preenchendo as linhas (Com blindagem .get() para evitar erros com dados velhos)
                 for item in st.session_state.banco_solicitacoes:
                     writer.writerow([
                         item.get('id', '-'),
@@ -248,7 +252,6 @@ with aba_gestao:
                         item.get('numero_oficio', '-')
                     ])
                 
-                # Codificação 'utf-8-sig' garante que os acentos fiquem perfeitos no Windows/Excel
                 csv_data = output.getvalue().encode('utf-8-sig')
                 
                 st.download_button(
@@ -261,9 +264,9 @@ with aba_gestao:
         st.markdown("---")
         
         if qtd_pendentes > 0:
-            st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
+            st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise.")
         else:
-            st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
+            st.success("🎉 **Excelente!** Não há ofícios pendentes na fila.")
                 
         filtro = st.radio("Filtrar visualização:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
         
@@ -314,7 +317,6 @@ with aba_gestao:
                     with col1:
                         if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
                             st.session_state.contador_oficio_oficial += 1
-                            
                             oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year}"
                             
                             st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
@@ -323,7 +325,7 @@ with aba_gestao:
                             st.session_state.banco_solicitacoes[indice]["data_emissao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
                             
                             enviar_email_notificacao(item.get('email', ''), f"Ofício Aprovado: {item['id']}", "Aprovação simulada")
-                            st.rerun()
+                            forçar_recarregamento_tela()
                             
                     with col2:
                         with st.expander("❌ Solicitar Correção ao Usuário"):
@@ -337,7 +339,7 @@ with aba_gestao:
                                     st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                                     
                                     enviar_email_notificacao(item.get('email', ''), f"Correção Solicitada: {item['id']}", "Recusa simulada")
-                                    st.rerun()
+                                    forçar_recarregamento_tela()
                                     
                 elif item["status"] == "Correção Solicitada":
                     st.info("⏳ Aguardando o usuário realizar as correções e enviar a nova versão do documento.")
