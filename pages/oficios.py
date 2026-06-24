@@ -23,175 +23,167 @@ if "banco_solicitacoes" not in st.session_state:
     st.session_state.banco_solicitacoes = []
 if "contador_oficio_oficial" not in st.session_state:
     st.session_state.contador_oficio_oficial = 0
+if "gestor_logado" not in st.session_state:
+    st.session_state.gestor_logado = False
 
-# --- LÓGICA DE LOGIN ---
-if "usuario_logado" not in st.session_state:
-    st.session_state.usuario_logado = False
-    st.session_state.perfil_usuario = ""
+# CABEÇALHO PÚBLICO
+st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionais</h2>", unsafe_allow_html=True)
+st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
+st.markdown("---")
 
-def fazer_login(usuario, senha):
-    # Simulação de base de dados de usuários
-    if usuario == "admin" and senha == "senha123":
-        st.session_state.usuario_logado = True
-        st.session_state.perfil_usuario = "Administrativo"
-    elif usuario == "prof" and senha == "senha123":
-        st.session_state.usuario_logado = True
-        st.session_state.perfil_usuario = "Professor"
-    elif usuario == "aluno" and senha == "senha123":
-        st.session_state.usuario_logado = True
-        st.session_state.perfil_usuario = "Aluno"
-    else:
-        st.error("Credenciais inválidas. Tente novamente.")
-
-def fazer_logout():
-    st.session_state.usuario_logado = False
-    st.session_state.perfil_usuario = ""
+# 4. SISTEMA DE ABAS (Público x Privado)
+aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
 
 # ==========================================
-# TELA DE LOGIN (Mostrada apenas se não estiver logado)
+# ABA 1: SOLICITAÇÃO (Aberta a todos)
 # ==========================================
-if not st.session_state.usuario_logado:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("<h1 style='text-align: center; color: #002147;'>CRIVO Autenticação</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center;'>Módulo de Emissão de Ofícios</p>", unsafe_allow_html=True)
+with aba_solicitar:
+    col_form, col_ajuda = st.columns([2, 1])
+    
+    with col_ajuda:
+        st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
+        try:
+            with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
+                st.download_button(label="📄 Baixar Modelo Oficial (.DOCX)", data=file, file_name="Modelo de ofício - Afya (oficial).docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+        except FileNotFoundError:
+            st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
+
+    with col_form:
+        perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
         
-        with st.form("form_login"):
-            usuario_input = st.text_input("Usuário (Teste com: admin, prof ou aluno)")
-            senha_input = st.text_input("Senha (Teste com: senha123)", type="password")
-            submit_login = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+        with st.form("form_pedido"):
+            assunto = st.text_input("Objetivo / Assunto do Documento:")
+            destinatario = st.text_input("Destinatário Final:")
             
-            if submit_login:
-                fazer_login(usuario_input, senha_input)
-                st.rerun()
-
-# ==========================================
-# SISTEMA ROTEADO (Mostrado após o login)
-# ==========================================
-else:
-    # Cabeçalho com botão de sair
-    col_titulo, col_sair = st.columns([4, 1])
-    with col_titulo:
-        st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionais</h2>", unsafe_allow_html=True)
-    with col_sair:
-        st.write(f"Logado como: **{st.session_state.perfil_usuario}**")
-        if st.button("Sair (Logout)"):
-            fazer_logout()
-            st.rerun()
-    st.markdown("---")
-
-    # ---------------------------------------------------------
-    # VISÃO 1: ÁREA DO SOLICITANTE (ALUNO OU PROFESSOR)
-    # ---------------------------------------------------------
-    if st.session_state.perfil_usuario in ["Aluno", "Professor"]:
-        aba_solicitar, aba_acompanhar = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido"])
-        
-        with aba_solicitar:
-            col_form, col_ajuda = st.columns([2, 1])
+            # A Trava por perfil continua aqui, aberta ao público!
+            if perfil_solicitante == "Administrativo":
+                st.info("💡 Como você é da equipe administrativa, o envio de anexo para revisão é opcional.")
+                arquivo_upload = st.file_uploader("Anexar ofício (Opcional):", type=["docx", "pdf"])
+                obrigatorio = False
+            else:
+                st.warning("⚠️ Atenção: Para Alunos e Professores, o anexo do modelo preenchido é obrigatório.")
+                arquivo_upload = st.file_uploader("Anexar seu ofício preenchido (Obrigatório):", type=["docx", "pdf"])
+                obrigatorio = True
             
-            with col_ajuda:
-                st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação.")
-                try:
-                    with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
-                        st.download_button(label="📄 Baixar Modelo Oficial (.DOCX)", data=file, file_name="Modelo de ofício - Afya (oficial).docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
-                except FileNotFoundError:
-                    st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
-
-            with col_form:
-                with st.form("form_pedido"):
-                    st.write(f"Nova solicitação - Perfil: **{st.session_state.perfil_usuario}**")
-                    assunto = st.text_input("Objetivo / Assunto do Documento:")
-                    destinatario = st.text_input("Destinatário Final:")
-                    
-                    st.warning("⚠️ Atenção: O anexo do modelo preenchido é obrigatório para análise.")
-                    arquivo_upload = st.file_uploader("Anexar seu ofício preenchido:", type=["docx", "pdf"])
-                    
-                    enviar = st.form_submit_button("Protocolar Pedido")
-                    
-                if enviar:
-                    if not assunto or not destinatario:
-                        st.error("Preencha o assunto e o destinatário.")
-                    elif arquivo_upload is None:
-                        st.error("❌ Operação Recusada: O anexo é obrigatório para professores e alunos.")
-                    else:
-                        id_gerado = f"REQ-{random.randint(1000, 9999)}"
-                        vencimento = datetime.now() + timedelta(days=3)
-                        
-                        # Salvando todos os dados, incluindo o arquivo lido em bytes
-                        st.session_state.banco_solicitacoes.append({
-                            "id": id_gerado,
-                            "data_solicitacao": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                            "prazo_limite": vencimento.strftime("%d/%m/%Y"),
-                            "perfil": st.session_state.perfil_usuario,
-                            "assunto": assunto,
-                            "destinatario": destinatario,
-                            "status": "Pendente",
-                            "numero_oficio": "-",
-                            "nome_arquivo": arquivo_upload.name,
-                            "bytes_arquivo": arquivo_upload.getvalue(), # O Cofre do Arquivo
-                            "feedback_admin": "" # Onde a secretária vai digitar as correções
-                        })
-                        st.success(f"✅ Protocolo gerado: {id_gerado}")
-                        st.info("Guarde este número para acompanhar o status na aba ao lado.")
-                        
-        with aba_acompanhar:
-            st.markdown("### Digite seu código de protocolo para verificar o andamento")
-            codigo_busca = st.text_input("Protocolo (Ex: REQ-1234):")
+            enviar = st.form_submit_button("Protocolar Pedido")
             
-            if st.button("Consultar"):
-                encontrado = next((item for item in st.session_state.banco_solicitacoes if item["id"] == codigo_busca), None)
+        if enviar:
+            if not assunto or not destinatario:
+                st.error("Preencha o assunto e o destinatário.")
+            elif obrigatorio and arquivo_upload is None:
+                st.error("❌ Operação Recusada: O anexo é obrigatório para o seu perfil.")
+            else:
+                id_gerado = f"REQ-{random.randint(1000, 9999)}"
+                vencimento = datetime.now() + timedelta(days=3)
                 
-                if encontrado:
-                    st.markdown(f"**Status atual:** {encontrado['status']}")
-                    st.markdown(f"**Número Oficial:** {encontrado['numero_oficio']}")
-                    st.markdown(f"**Prazo de Resposta:** {encontrado['prazo_limite']}")
-                    
-                    if encontrado['status'] == "Correção Solicitada" and encontrado['feedback_admin']:
-                        st.markdown(f"""
-                        <div class='bloco-alerta'>
-                            <strong>⚠️ A Secretaria solicitou ajustes no seu documento:</strong><br>
-                            {encontrado['feedback_admin']}
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
+                arquivo_bytes = arquivo_upload.getvalue() if arquivo_upload else None
+                arquivo_nome = arquivo_upload.name if arquivo_upload else "Sem anexo"
+                
+                st.session_state.banco_solicitacoes.append({
+                    "id": id_gerado,
+                    "data_solicitacao": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    "prazo_limite": vencimento.strftime("%d/%m/%Y"),
+                    "perfil": perfil_solicitante,
+                    "assunto": assunto,
+                    "destinatario": destinatario,
+                    "status": "Pendente",
+                    "numero_oficio": "-",
+                    "nome_arquivo": arquivo_nome,
+                    "bytes_arquivo": arquivo_bytes,
+                    "feedback_admin": ""
+                })
+                st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
+                st.info("Utilize a aba 'Acompanhar Pedido' para verificar o andamento.")
 
-    # ---------------------------------------------------------
-    # VISÃO 2: ÁREA DA SECRETARIA / ADMINISTRATIVA
-    # ---------------------------------------------------------
-    elif st.session_state.perfil_usuario == "Administrativo":
-        st.markdown("### Painel de Gestão e Triagem")
+# ==========================================
+# ABA 2: ACOMPANHAMENTO (Aberta a todos)
+# ==========================================
+with aba_acompanhar:
+    st.markdown("### Consultar andamento do Ofício")
+    codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234):")
+    
+    if st.button("Buscar Protocolo"):
+        encontrado = next((item for item in st.session_state.banco_solicitacoes if item["id"] == codigo_busca), None)
         
+        if encontrado:
+            st.markdown(f"**Status atual:** {encontrado['status']}")
+            st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
+            st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
+            
+            if encontrado['status'] == "Correção Solicitada" and encontrado['feedback_admin']:
+                st.markdown(f"""
+                <div class='bloco-alerta'>
+                    <strong>⚠️ A Secretaria solicitou ajustes no seu documento:</strong><br>
+                    {encontrado['feedback_admin']}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
+
+# ==========================================
+# ABA 3: ÁREA DA GESTÃO (Protegida por Login)
+# ==========================================
+with aba_gestao:
+    if not st.session_state.gestor_logado:
+        st.markdown("### Acesso Restrito - Equipe Administrativa")
+        st.write("Digite suas credenciais institucionais para gerenciar a fila de ofícios.")
+        
+        col_login, col_vazia = st.columns([1, 1])
+        with col_login:
+            with st.form("login_gestao"):
+                email = st.text_input("E-mail Institucional (@afya.com.br)")
+                senha = st.text_input("Senha de Acesso", type="password")
+                btn_login = st.form_submit_button("Acessar Painel")
+                
+                if btn_login:
+                    if email == "gestao@afya.com.br" and senha == "afya2026":
+                        st.session_state.gestor_logado = True
+                        st.rerun()
+                    else:
+                        st.error("Credenciais inválidas ou acesso não autorizado.")
+            
+            # Simulação do botão de enviar senha
+            if st.button("Receber nova senha por e-mail"):
+                st.success("Simulação: Um link de acesso/senha foi enviado para o seu e-mail corporativo.")
+                
+    else:
+        # PAINEL DA GESTORA (Só aparece se logado)
+        col_tit, col_sair = st.columns([4, 1])
+        with col_tit:
+            st.markdown("### ⚙️ Painel de Aprovação e Numeração")
+        with col_sair:
+            if st.button("Sair (Logout)"):
+                st.session_state.gestor_logado = False
+                st.rerun()
+                
         # Filtro para ver apenas os pendentes ou todos
-        filtro = st.radio("Filtrar lista:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
+        filtro = st.radio("Filtrar visualização:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
         
         lista_exibicao = st.session_state.banco_solicitacoes
         if filtro == "Apenas Pendentes":
             lista_exibicao = [item for item in lista_exibicao if item["status"] == "Pendente"]
             
         if not lista_exibicao:
-            st.info("A fila está limpa! Nenhum ofício aguardando análise.")
+            st.info("Nenhuma requisição aguardando análise no momento.")
         else:
             for item in reversed(lista_exibicao):
                 indice = st.session_state.banco_solicitacoes.index(item)
                 
                 st.markdown(f"""
                 <div class='cartao-ticket'>
-                    <strong>Protocolo {item['id']}</strong> | Requerente: {item['perfil']}<br>
+                    <strong>Protocolo: {item['id']}</strong> | Requerente: {item['perfil']}<br>
                     <strong>Assunto:</strong> {item['assunto']}<br>
-                    <strong>Status:</strong> {item['status']} | <strong>Ofício Gerado:</strong> {item['numero_oficio']}
+                    <strong>Status:</strong> {item['status']} | <strong>Ofício Gerado:</strong> <span style='color: #002147; font-weight: bold;'>{item['numero_oficio']}</span>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Botão para a Secretária baixar e ler o anexo enviado
                 if item.get("bytes_arquivo"):
                     st.download_button(label=f"📥 Baixar Documento Enviado ({item['nome_arquivo']})", data=item["bytes_arquivo"], file_name=item["nome_arquivo"], key=f"dl_{item['id']}")
                 
-                # Ações de Aprovação ou Recusa
                 if item["status"] == "Pendente":
                     col1, col2 = st.columns(2)
                     with col1:
-                        if st.button("✅ Aprovar e Gerar Nº Oficial", key=f"aprova_{item['id']}"):
+                        if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
                             st.session_state.contador_oficio_oficial += 1
                             oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year} AFYAMARABÁ/AFYA/COORD. DE CURSO"
                             st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
@@ -199,11 +191,11 @@ else:
                             st.rerun()
                             
                     with col2:
-                        with st.expander("❌ Solicitar Correção"):
-                            feedback = st.text_area("Descreva os erros para o usuário corrigir:", key=f"fb_{item['id']}")
-                            if st.button("Devolver Ofício"):
+                        with st.expander("❌ Solicitar Correção ao Usuário"):
+                            feedback = st.text_area("Aponte os erros para correção (ex: faltou assinatura):", key=f"fb_{item['id']}")
+                            if st.button("Devolver Documento"):
                                 if not feedback:
-                                    st.warning("Preencha o motivo antes de devolver.")
+                                    st.warning("Escreva o motivo antes de devolver.")
                                 else:
                                     st.session_state.banco_solicitacoes[indice]["status"] = "Correção Solicitada"
                                     st.session_state.banco_solicitacoes[indice]["feedback_admin"] = feedback
