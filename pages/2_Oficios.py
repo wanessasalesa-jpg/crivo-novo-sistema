@@ -152,7 +152,7 @@ with aba_acompanhar:
             st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
             st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
             
-            # Blindagem para protocolos antigos
+            # Proteção ao ler a data de emissão
             data_emissao = encontrado.get('data_emissao', '-')
             if data_emissao != "-":
                 st.markdown(f"**Data de Emissão (Aprovação):** {data_emissao}")
@@ -226,20 +226,20 @@ with aba_gestao:
             else:
                 df = pd.DataFrame(st.session_state.banco_solicitacoes)
                 
-                # Proteção caso existam protocolos velhos sem esses campos
-                if 'data_emissao' not in df.columns:
-                    df['data_emissao'] = '-'
-                if 'setor' not in df.columns:
-                    df['setor'] = 'Não se aplica'
-                    
-                df_export = df[['id', 'data_solicitacao', 'data_emissao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']]
+                # --- BLINDAGEM DO PANDAS (Protege contra protocolos antigos) ---
+                colunas_necessarias = ['id', 'data_solicitacao', 'data_emissao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']
+                for col in colunas_necessarias:
+                    if col not in df.columns:
+                        df[col] = '-'
+                        
+                df_export = df[colunas_necessarias]
                 df_export.columns = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
                 
-                # Gerador blindado de CSV (Configurado perfeitamente para o Excel do Brasil)
+                # Gerador CSV blindado para o Excel Brasileiro (Ponto e Vírgula)
                 csv_data = df_export.to_csv(index=False, sep=';').encode('utf-8-sig')
                 
                 st.download_button(
-                    label="📥 Baixar Relatório Completo (Excel/CSV)",
+                    label="📥 Baixar Relatório Completo",
                     data=csv_data,
                     file_name=f"Relatorio_Oficios_Afya_{datetime.now().strftime('%d_%m_%Y')}.csv",
                     mime="text/csv",
@@ -290,10 +290,10 @@ with aba_gestao:
                 
                 if item.get("bytes_arquivo"):
                     st.download_button(
-                        label=f"📥 Baixar Documento Enviado ({item['nome_arquivo']})", 
+                        label=f"📥 Baixar Documento Enviado ({item.get('nome_arquivo', 'arquivo')})", 
                         data=item["bytes_arquivo"], 
-                        file_name=item["nome_arquivo"], 
-                        key=f"dl_{item['id']}_{item['nome_arquivo']}"
+                        file_name=item.get("nome_arquivo", "documento"), 
+                        key=f"dl_{item['id']}_{item.get('nome_arquivo', 'arq')}"
                     )
                 
                 if item["status"] == "Pendente":
