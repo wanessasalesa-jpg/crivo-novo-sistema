@@ -13,4 +13,308 @@ st.set_page_config(page_title="Módulo de Ofícios - CRIVO", page_icon="📄", l
 st.markdown("""
     <style>
     .titulo-principal { color: #002147; font-family: 'Arial'; font-weight: bold; margin-bottom: 5px; }
-    .cartao-ticket { background-color: #ffffff; padding: 20px; border-radius: 8px; border-left: 6px solid #002147
+    .cartao-ticket { background-color: #ffffff; padding: 20px; border-radius: 8px; border-left: 6px solid #002147; margin-bottom: 15px; box-shadow: 0px 2px 8px rgba(0,0,0,0.08); }
+    
+    /* Cores de Status */
+    .status-pendente { background-color: #ffc107; color: #212529; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+    .status-aprovado { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+    .status-recusado { background-color: #dc3545; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+    
+    /* Cores de Perfil (Gestão Visual) */
+    .perfil-aluno { background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .perfil-professor { background-color: #6f42c1; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .perfil-admin { background-color: #343a40; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    
+    .bloco-alerta { background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; border-left: 5px solid #ffeeba; margin-top: 10px; margin-bottom: 15px;}
+    </style>
+""", unsafe_allow_html=True)
+
+# 3. MOTOR DE E-MAILS (Com proteção contra erros caso a senha não esteja configurada ainda)
+def enviar_email_notificacao(destinatario, assunto, mensagem_html):
+    try:
+        # Puxa as credenciais do cofre do Streamlit (Secrets)
+        email_remetente = st.secrets["EMAIL_SISTEMA"]
+        senha_remetente = st.secrets["SENHA_SISTEMA"]
+        
+        msg = MIMEMultipart()
+        msg['From'] = email_remetente
+        msg['To'] = destinatario
+        msg['Subject'] = assunto
+        msg.attach(MIMEText(mensagem_html, 'html'))
+        
+        # Configuração padrão do Gmail (pode ser ajustada para Outlook se necessário)
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(email_remetente, senha_remetente)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        # Se falhar (ex: falta de configuração), o sistema não quebra, apenas avisa no console
+        print(f"Alerta: Falha no envio de e-mail simulado. Erro: {e}")
+        return False
+
+# 4. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE SESSÃO
+if "banco_solicitacoes" not in st.session_state:
+    st.session_state.banco_solicitacoes = []
+if "contador_oficio_oficial" not in st.session_state:
+    st.session_state.contador_oficio_oficial = 0
+if "gestor_logado" not in st.session_state:
+    st.session_state.gestor_logado = False
+if "protocolo_buscado" not in st.session_state:
+    st.session_state.protocolo_buscado = ""
+
+# --- CÁLCULO DE PENDÊNCIAS EM TEMPO REAL ---
+qtd_pendentes = sum(1 for item in st.session_state.banco_solicitacoes if item["status"] == "Pendente")
+
+# CABEÇALHO PÚBLICO
+st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionais</h2>", unsafe_allow_html=True)
+st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
+st.markdown("---")
+
+# 5. SISTEMA DE ABAS DINÂMICO
+nome_aba_gestao = f"⚙️ Área da Gestão ({qtd_pendentes} pendentes)" if qtd_pendentes > 0 else "⚙️ Área da Gestão"
+aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", nome_aba_gestao])
+
+# ==========================================
+# ABA 1: SOLICITAÇÃO
+# ==========================================
+with aba_solicitar:
+    col_form, col_ajuda = st.columns([2, 1])
+    
+    with col_ajuda:
+        st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
+        try:
+            with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
+                st.download_button(label="📄 Baixar Modelo Oficial (.DOCX)", data=file, file_name="Modelo de ofício - Afya (oficial).docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+        except FileNotFoundError:
+            st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
+
+    with col_form:
+        perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
+        
+        with st.form("form_pedido"):
+            nome_solicitante = st.text_input("Nome Completo do Solicitante:")
+            email_solicitante = st.text_input("E-mail para contato:")
+            st.markdown("---")
+            assunto = st.text_input("Objetivo / Assunto do Documento:")
+            destinatario = st.text_input("Destinatário Final:")
+            
+            if perfil_solicitante == "Administrativo":
+                st.info("💡 Como você é da equipe administrativa, o envio de anexo para revisão é opcional.")
+                arquivo_upload = st.file_uploader("Anexar ofício (Opcional):", type=["docx", "pdf"])
+                obrigatorio = False
+            else:
+                st.warning("⚠️ Atenção: Para Alunos e Professores, o anexo do modelo preenchido é obrigatório.")
+                arquivo_upload = st.file_uploader("Anexar seu ofício preenchido (Obrigatório):", type=["docx", "pdf"])
+                obrigatorio = True
+            
+            enviar = st.form_submit_button("Protocolar Pedido")
+            
+        if enviar:
+            if not nome_solicitante or not email_solicitante or not assunto or not destinatario:
+                st.error("❌ Por favor, preencha todos os campos de texto obrigatórios (Nome, E-mail, Assunto e Destinatário).")
+            elif perfil_solicitante in ["Professor", "Administrativo"] and not email_solicitante.lower().endswith("@afya.com.br"):
+                st.error("❌ Acesso Bloqueado: Para perfis de Professor ou Administrativo, é obrigatório o uso do e-mail institucional (@afya.com.br).")
+            elif obrigatorio and arquivo_upload is None:
+                st.error("❌ Operação Recusada: O anexo é obrigatório para o seu perfil.")
+            else:
+                id_gerado = f"REQ-{random.randint(1000, 9999)}"
+                vencimento = datetime.now() + timedelta(days=3)
+                arquivo_bytes = arquivo_upload.getvalue() if arquivo_upload else None
+                arquivo_nome = arquivo_upload.name if arquivo_upload else "Sem anexo"
+                
+                st.session_state.banco_solicitacoes.append({
+                    "id": id_gerado,
+                    "data_solicitacao": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    "prazo_limite": vencimento.strftime("%d/%m/%Y"),
+                    "perfil": perfil_solicitante,
+                    "nome": nome_solicitante,
+                    "email": email_solicitante,
+                    "assunto": assunto,
+                    "destinatario": destinatario,
+                    "status": "Pendente",
+                    "numero_oficio": "-",
+                    "nome_arquivo": arquivo_nome,
+                    "bytes_arquivo": arquivo_bytes,
+                    "feedback_admin": "",
+                    "reenviado": False
+                })
+                
+                # --- DISPARO DE E-MAIL 1: RECEBIMENTO ---
+                corpo_email = f"<h3>Olá, {nome_solicitante}!</h3><p>Sua solicitação de ofício foi recebida pela secretaria.</p><p><strong>Seu protocolo é: {id_gerado}</strong></p><p>O prazo para devolutiva é até {vencimento.strftime('%d/%m/%Y')}. Guarde este número para consultar o andamento no sistema.</p>"
+                enviar_email_notificacao(email_solicitante, f"Protocolo Recebido: {id_gerado}", corpo_email)
+                
+                st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
+                st.info("✉️ Uma confirmação com o seu número de protocolo foi enviada para o seu e-mail.")
+
+# ==========================================
+# ABA 2: ACOMPANHAMENTO E REENVIO
+# ==========================================
+with aba_acompanhar:
+    st.markdown("### Consultar andamento do Ofício")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234):")
+    with col2:
+        st.write("")
+        st.write("")
+        if st.button("Buscar Protocolo"):
+            st.session_state.protocolo_buscado = codigo_busca
+            
+    if st.session_state.protocolo_buscado:
+        encontrado = next((item for item in st.session_state.banco_solicitacoes if item["id"] == st.session_state.protocolo_buscado), None)
+        
+        if encontrado:
+            st.markdown(f"**Status atual:** {encontrado['status']}")
+            st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
+            st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
+            
+            if encontrado.get("reenviado") and encontrado['status'] == "Pendente":
+                st.success("✅ Nova versão enviada com sucesso! O documento retornou para a fila de análise da secretaria.")
+            
+            if encontrado['status'] == "Correção Solicitada" and encontrado['feedback_admin']:
+                st.markdown(f"""
+                <div class='bloco-alerta'>
+                    <strong>⚠️ A Secretaria solicitou ajustes no seu documento:</strong><br>
+                    {encontrado['feedback_admin']}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("#### 🔄 Enviar Nova Versão")
+                with st.form(key=f"form_reenvio_{encontrado['id']}"):
+                    novo_arquivo = st.file_uploader("Anexar arquivo corrigido:", type=["docx", "pdf"])
+                    btn_reenviar = st.form_submit_button("Reenviar para a Secretaria")
+                    
+                    if btn_reenviar:
+                        if novo_arquivo is None:
+                            st.error("Por favor, anexe o arquivo corrigido antes de clicar em reenviar.")
+                        else:
+                            indice = st.session_state.banco_solicitacoes.index(encontrado)
+                            novo_prazo = datetime.now() + timedelta(days=3)
+                            
+                            st.session_state.banco_solicitacoes[indice]["status"] = "Pendente"
+                            st.session_state.banco_solicitacoes[indice]["nome_arquivo"] = novo_arquivo.name
+                            st.session_state.banco_solicitacoes[indice]["bytes_arquivo"] = novo_arquivo.getvalue()
+                            st.session_state.banco_solicitacoes[indice]["feedback_admin"] = ""
+                            st.session_state.banco_solicitacoes[indice]["prazo_limite"] = novo_prazo.strftime("%d/%m/%Y")
+                            st.session_state.banco_solicitacoes[indice]["reenviado"] = True
+                            st.rerun() 
+        else:
+            st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
+
+# ==========================================
+# ABA 3: ÁREA DA GESTÃO COM CORES E DISPAROS
+# ==========================================
+with aba_gestao:
+    if not st.session_state.gestor_logado:
+        st.markdown("### Acesso Restrito - Equipe Administrativa")
+        col_login, col_vazia = st.columns([1, 1])
+        with col_login:
+            with st.form("login_gestao"):
+                email = st.text_input("E-mail Institucional (@afya.com.br)")
+                senha = st.text_input("Senha de Acesso", type="password")
+                btn_login = st.form_submit_button("Acessar Painel")
+                if btn_login:
+                    if email == "gestao@afya.com.br" and senha == "afya2026":
+                        st.session_state.gestor_logado = True
+                        st.rerun()
+                    else:
+                        st.error("Credenciais inválidas.")
+    else:
+        col_tit, col_sair = st.columns([4, 1])
+        with col_tit:
+            st.markdown("### ⚙️ Painel de Aprovação e Numeração")
+        with col_sair:
+            if st.button("Sair (Logout)"):
+                st.session_state.gestor_logado = False
+                st.rerun()
+                
+        if qtd_pendentes > 0:
+            st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
+        else:
+            st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
+                
+        filtro = st.radio("Filtrar visualização:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
+        
+        lista_exibicao = st.session_state.banco_solicitacoes
+        if filtro == "Apenas Pendentes":
+            lista_exibicao = [item for item in lista_exibicao if item["status"] == "Pendente"]
+            
+        if not lista_exibicao and filtro == "Apenas Pendentes":
+            st.info("Nenhuma requisição aguardando análise no momento.")
+        else:
+            for item in reversed(lista_exibicao):
+                indice = st.session_state.banco_solicitacoes.index(item)
+                
+                # --- DEFINIÇÃO DA COR DA ETIQUETA ---
+                if item['perfil'] == "Aluno":
+                    badge = "<span class='perfil-aluno'>🧑‍🎓 Aluno</span>"
+                elif item['perfil'] == "Professor":
+                    badge = "<span class='perfil-professor'>👨‍🏫 Professor</span>"
+                else:
+                    badge = "<span class='perfil-admin'>⚙️ Administrativo</span>"
+                
+                # --- O CARTÃO ---
+                st.markdown(f"""
+                <div class='cartao-ticket'>
+                    <div style='display: flex; justify-content: space-between; align-items: center;'>
+                        <div><strong>Protocolo: {item['id']}</strong></div>
+                        <div style='font-size: 13px; color: #666;'>Requerente: {badge}</div>
+                    </div>
+                    <hr style='margin: 10px 0; border: 0; border-top: 1px solid #e9ecef;'>
+                    <strong>Nome:</strong> {item['nome']} ({item['email']})<br>
+                    <strong>Assunto:</strong> {item['assunto']}<br>
+                    <strong>Destinatário Final:</strong> {item['destinatario']}<br>
+                    <div style='margin-top: 10px;'>
+                        <strong>Status:</strong> {item['status']} | <strong>Ofício Gerado:</strong> <span style='color: #002147; font-weight: bold;'>{item['numero_oficio']}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if item.get("bytes_arquivo"):
+                    st.download_button(
+                        label=f"📥 Baixar Documento Enviado ({item['nome_arquivo']})", 
+                        data=item["bytes_arquivo"], 
+                        file_name=item["nome_arquivo"], 
+                        key=f"dl_{item['id']}_{item['nome_arquivo']}"
+                    )
+                
+                if item["status"] == "Pendente":
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
+                            st.session_state.contador_oficio_oficial += 1
+                            oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year} AFYAMARABÁ/AFYA/COORD. DE CURSO"
+                            st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
+                            st.session_state.banco_solicitacoes[indice]["numero_oficio"] = oficio_gerado
+                            st.session_state.banco_solicitacoes[indice]["reenviado"] = False
+                            
+                            # --- DISPARO DE E-MAIL 2: APROVAÇÃO ---
+                            corpo_email = f"<h3>Boas notícias, {item['nome']}!</h3><p>Seu ofício foi analisado e aprovado.</p><p><strong>Número Oficial Emitido: {oficio_gerado}</strong></p><p>O documento já pode ser utilizado.</p>"
+                            enviar_email_notificacao(item['email'], f"Ofício Aprovado: {item['id']}", corpo_email)
+                            
+                            st.rerun()
+                            
+                    with col2:
+                        with st.expander("❌ Solicitar Correção ao Usuário"):
+                            feedback = st.text_area("Aponte os erros para correção:", key=f"fb_{item['id']}")
+                            if st.button("Devolver Documento", key=f"dev_{item['id']}"):
+                                if not feedback:
+                                    st.warning("Escreva o motivo antes de devolver.")
+                                else:
+                                    st.session_state.banco_solicitacoes[indice]["status"] = "Correção Solicitada"
+                                    st.session_state.banco_solicitacoes[indice]["feedback_admin"] = feedback
+                                    st.session_state.banco_solicitacoes[indice]["reenviado"] = False
+                                    
+                                    # --- DISPARO DE E-MAIL 3: EXIGÊNCIA ---
+                                    corpo_email = f"<h3>Atenção, {item['nome']}.</h3><p>Sua solicitação de ofício ({item['id']}) foi devolvida pela secretaria para ajustes.</p><p><strong>Motivo apontado:</strong><br>{feedback}</p><p>Acesse o sistema e envie a nova versão corrigida.</p>"
+                                    enviar_email_notificacao(item['email'], f"Correção Solicitada: {item['id']}", corpo_email)
+                                    
+                                    st.rerun()
+                                    
+                elif item["status"] == "Correção Solicitada":
+                    st.info("⏳ Aguardando o usuário realizar as correções e enviar a nova versão do documento.")
+                
+                st.markdown("---")
