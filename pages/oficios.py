@@ -5,8 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # 1. CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="Módulo de Ofícios - CRIVO", page_icon="📄", layout="wide")
-
+st.set_page_config(page_title="Portal de Ofícios - CRIVO", page_icon="📄", layout="wide")
 # 2. DESIGN CUSTOMIZADO (CSS)
 st.markdown("""
     <style>
