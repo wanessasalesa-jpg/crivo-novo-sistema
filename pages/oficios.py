@@ -1,6 +1,6 @@
 import streamlit as st
 import random
-import time
+import io
 import pandas as pd
 from datetime import datetime, timedelta
 
@@ -18,7 +18,7 @@ st.markdown("""
     .status-aprovado { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     .status-recusado { background-color: #dc3545; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     
-    /* Cores de Perfil (Gestão Visual) */
+    /* Cores de Perfil */
     .perfil-aluno { background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
     .perfil-professor { background-color: #6f42c1; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
     .perfil-admin { background-color: #343a40; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
@@ -42,17 +42,13 @@ if "gestor_logado" not in st.session_state:
 if "protocolo_buscado" not in st.session_state:
     st.session_state.protocolo_buscado = ""
 
-# --- CÁLCULO DE PENDÊNCIAS EM TEMPO REAL ---
-qtd_pendentes = sum(1 for item in st.session_state.banco_solicitacoes if item["status"] == "Pendente")
-
 # CABEÇALHO PÚBLICO
 st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionais</h2>", unsafe_allow_html=True)
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
 
-# 5. SISTEMA DE ABAS DINÂMICO
-nome_aba_gestao = f"⚙️ Área da Gestão ({qtd_pendentes} pendentes)" if qtd_pendentes > 0 else "⚙️ Área da Gestão"
-aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", nome_aba_gestao])
+# 5. SISTEMA DE ABAS (Nome fixo para evitar que a tela pule!)
+aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
 
 # ==========================================
 # ABA 1: SOLICITAÇÃO
@@ -71,7 +67,6 @@ with aba_solicitar:
     with col_form:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
         
-        # ADD: clear_on_submit=True esvazia o formulário instantaneamente após o envio!
         with st.form("form_pedido", clear_on_submit=True):
             nome_solicitante = st.text_input("Nome Completo do Solicitante:")
             email_solicitante = st.text_input("E-mail para contato:")
@@ -114,6 +109,7 @@ with aba_solicitar:
                 st.session_state.banco_solicitacoes.append({
                     "id": id_gerado,
                     "data_solicitacao": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    "data_emissao": "-", # Nova coluna criada e vazia inicialmente
                     "prazo_limite": vencimento.strftime("%d/%m/%Y"),
                     "perfil": perfil_solicitante,
                     "nome": nome_solicitante,
@@ -138,7 +134,6 @@ with aba_solicitar:
 with aba_acompanhar:
     st.markdown("### Consultar andamento do Ofício")
     
-    # Criado um formulário de busca com clear_on_submit=True para a caixa de texto limpar sozinha
     with st.form("form_busca", clear_on_submit=True):
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -159,6 +154,8 @@ with aba_acompanhar:
             st.markdown(f"**Status atual:** {encontrado['status']}")
             st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
             st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
+            if encontrado['data_emissao'] != "-":
+                st.markdown(f"**Data de Emissão (Aprovação):** {encontrado['data_emissao']}")
             
             if encontrado.get("reenviado") and encontrado['status'] == "Pendente":
                 st.success("✅ Nova versão enviada com sucesso! O documento retornou para a fila de análise da secretaria.")
@@ -194,7 +191,7 @@ with aba_acompanhar:
             st.error(f"Protocolo '{st.session_state.protocolo_buscado}' não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO (COM EXCEL BRASILEIRO E OFÍCIO LIMPO)
+# ABA 3: ÁREA DA GESTÃO (COM EXCEL INTELIGENTE)
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -212,31 +209,45 @@ with aba_gestao:
                     else:
                         st.error("Credenciais inválidas.")
     else:
+        # AQUI FICA O AVISO DE PENDÊNCIAS (Protegido e invisível para os alunos)
+        qtd_pendentes = sum(1 for item in st.session_state.banco_solicitacoes if item["status"] == "Pendente")
+        
         col_tit, col_sair = st.columns([4, 1])
         with col_tit:
-            st.markdown("### ⚙️ Painel de Aprovação e Numeração")
+            st.markdown(f"### ⚙️ Painel de Aprovação ({qtd_pendentes} pendentes)")
         with col_sair:
             if st.button("Sair (Logout)"):
                 st.session_state.gestor_logado = False
                 st.rerun()
         
-        with st.expander("📊 Relatórios e Prestação de Contas (Exportar Dados)"):
-            st.write("Baixe a planilha completa com o histórico de todos os ofícios solicitados e emitidos.")
+        with st.expander("📊 Relatórios e Prestação de Contas (Exportar para Excel)"):
+            st.write("Baixe a planilha estruturada com o histórico de todos os ofícios, tempos de resposta e emissões.")
             if not st.session_state.banco_solicitacoes:
                 st.info("Ainda não há dados suficientes para gerar um relatório.")
             else:
+                # Criando o DataFrame
                 df = pd.DataFrame(st.session_state.banco_solicitacoes)
-                df_export = df[['id', 'data_solicitacao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']]
-                df_export.columns = ['Protocolo', 'Data Solicitação', 'Perfil', 'Nome', 'Setor Solicitante', 'Assunto', 'Destinatário Final', 'Status Atual', 'Nº Oficial Gerado']
+                df_export = df[['id', 'data_solicitacao', 'data_emissao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']]
+                df_export.columns = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
                 
-                # ADD: sep=';' para forçar o formato do Excel Brasileiro!
-                csv_data = df_export.to_csv(index=False, sep=';').encode('utf-8-sig')
+                # GERADOR DE ARQUIVO .XLSX (Excel nativo com autoajuste de colunas)
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_export.to_excel(writer, index=False, sheet_name='Ofícios Afya')
+                    worksheet = writer.sheets['Ofícios Afya']
+                    
+                    # Lógica matemática para ler o tamanho do texto e abrir a coluna perfeitamente
+                    for idx, col in enumerate(df_export.columns):
+                        series = df_export[col]
+                        max_len = max(series.astype(str).map(len).max(), len(str(col))) + 2
+                        col_letter = chr(65 + idx) # Converte 0 para A, 1 para B, etc.
+                        worksheet.column_dimensions[col_letter].width = max_len
                 
                 st.download_button(
-                    label="📥 Baixar Relatório em Excel (CSV)",
-                    data=csv_data,
-                    file_name=f"Relatorio_Oficios_{datetime.now().strftime('%d_%m_%Y')}.csv",
-                    mime="text/csv",
+                    label="📥 Baixar Relatório Completo (.xlsx)",
+                    data=buffer.getvalue(),
+                    file_name=f"Relatorio_Oficios_Afya_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
         st.markdown("---")
@@ -296,15 +307,17 @@ with aba_gestao:
                         if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
                             st.session_state.contador_oficio_oficial += 1
                             
-                            # ADD: O carimbo do ofício agora é limpo e direto, exatamente como solicitado!
                             oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year}"
                             
                             st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
                             st.session_state.banco_solicitacoes[indice]["numero_oficio"] = oficio_gerado
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                             
+                            # CARIMBANDO A DATA E HORA EXATA DA EMISSÃO
+                            st.session_state.banco_solicitacoes[indice]["data_emissao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                            
                             enviar_email_notificacao(item['email'], f"Ofício Aprovado: {item['id']}", "Aprovação simulada")
-                            st.rerun()
+                            st.rerun() # Como o nome da aba agora é fixo, a tela não vai pular!
                             
                     with col2:
                         with st.expander("❌ Solicitar Correção ao Usuário"):
