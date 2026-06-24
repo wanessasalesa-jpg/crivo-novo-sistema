@@ -28,13 +28,17 @@ if "gestor_logado" not in st.session_state:
 if "protocolo_buscado" not in st.session_state:
     st.session_state.protocolo_buscado = ""
 
+# --- CÁLCULO DE PENDÊNCIAS EM TEMPO REAL ---
+qtd_pendentes = sum(1 for item in st.session_state.banco_solicitacoes if item["status"] == "Pendente")
+
 # CABEÇALHO PÚBLICO
 st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionais</h2>", unsafe_allow_html=True)
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
 
-# 4. SISTEMA DE ABAS
-aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
+# 4. SISTEMA DE ABAS DINÂMICO (Mostra o contador direto na aba)
+nome_aba_gestao = f"⚙️ Área da Gestão ({qtd_pendentes} pendentes)" if qtd_pendentes > 0 else "⚙️ Área da Gestão"
+aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", nome_aba_gestao])
 
 # ==========================================
 # ABA 1: SOLICITAÇÃO
@@ -111,7 +115,6 @@ with aba_acompanhar:
         if st.button("Buscar Protocolo"):
             st.session_state.protocolo_buscado = codigo_busca
             
-    # Se existe um protocolo salvo na memória da busca
     if st.session_state.protocolo_buscado:
         encontrado = next((item for item in st.session_state.banco_solicitacoes if item["id"] == st.session_state.protocolo_buscado), None)
         
@@ -120,11 +123,9 @@ with aba_acompanhar:
             st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
             st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
             
-            # CONFIRMAÇÃO FIXA DE REENVIO
             if encontrado.get("reenviado") and encontrado['status'] == "Pendente":
                 st.success("✅ Nova versão enviada com sucesso! O documento retornou para a fila de análise da secretaria.")
             
-            # --- FORMULÁRIO DE REENVIO (Se estiver em exigência) ---
             if encontrado['status'] == "Correção Solicitada" and encontrado['feedback_admin']:
                 st.markdown(f"""
                 <div class='bloco-alerta'>
@@ -136,7 +137,6 @@ with aba_acompanhar:
                 st.markdown("#### 🔄 Enviar Nova Versão")
                 st.write("Faça as correções apontadas no seu arquivo e envie a nova versão abaixo para reanálise.")
                 
-                # Usando um st.form para blindar o envio e evitar o bug do Streamlit
                 with st.form(key=f"form_reenvio_{encontrado['id']}"):
                     novo_arquivo = st.file_uploader("Anexar arquivo corrigido:", type=["docx", "pdf"])
                     btn_reenviar = st.form_submit_button("Reenviar para a Secretaria")
@@ -155,12 +155,12 @@ with aba_acompanhar:
                             st.session_state.banco_solicitacoes[indice]["prazo_limite"] = novo_prazo.strftime("%d/%m/%Y")
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = True
                             
-                            st.rerun() # Força o recarregamento imediato
+                            st.rerun() 
         else:
             st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO
+# ABA 3: ÁREA DA GESTÃO COM ALERTA DE PENDÊNCIAS
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -188,13 +188,19 @@ with aba_gestao:
                 st.session_state.gestor_logado = False
                 st.rerun()
                 
+        # --- BALÃO DE AVISO DA FUNCIONÁRIA ---
+        if qtd_pendentes > 0:
+            st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
+        else:
+            st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
+                
         filtro = st.radio("Filtrar visualização:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
         
         lista_exibicao = st.session_state.banco_solicitacoes
         if filtro == "Apenas Pendentes":
             lista_exibicao = [item for item in lista_exibicao if item["status"] == "Pendente"]
             
-        if not lista_exibicao:
+        if not lista_exibicao and filtro == "Apenas Pendentes":
             st.info("Nenhuma requisição aguardando análise no momento.")
         else:
             for item in reversed(lista_exibicao):
@@ -208,7 +214,6 @@ with aba_gestao:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Exibe o botão de download com a chave dinâmica sempre
                 if item.get("bytes_arquivo"):
                     st.download_button(
                         label=f"📥 Baixar Documento Enviado ({item['nome_arquivo']})", 
@@ -217,7 +222,6 @@ with aba_gestao:
                         key=f"dl_{item['id']}_{item['nome_arquivo']}"
                     )
                 
-                # Se estiver pendente, mostra os botões de ação
                 if item["status"] == "Pendente":
                     col1, col2 = st.columns(2)
                     with col1:
@@ -241,7 +245,6 @@ with aba_gestao:
                                     st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                                     st.rerun()
                                     
-                # AVISO PARA A ADMINISTRAÇÃO SE O STATUS FOR "CORREÇÃO SOLICITADA"
                 elif item["status"] == "Correção Solicitada":
                     st.info("⏳ Aguardando o usuário realizar as correções e enviar a nova versão do documento.")
                 
