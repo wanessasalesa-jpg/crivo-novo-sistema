@@ -14,7 +14,7 @@ st.markdown("""
     .status-pendente { background-color: #ffc107; color: #212529; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     .status-aprovado { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     .status-recusado { background-color: #dc3545; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
-    .bloco-alerta { background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; border-left: 5px solid #ffeeba; margin-top: 10px;}
+    .bloco-alerta { background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; border-left: 5px solid #ffeeba; margin-top: 10px; margin-bottom: 15px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -55,7 +55,6 @@ with aba_solicitar:
             assunto = st.text_input("Objetivo / Assunto do Documento:")
             destinatario = st.text_input("Destinatário Final:")
             
-            # A Trava por perfil continua aqui, aberta ao público!
             if perfil_solicitante == "Administrativo":
                 st.info("💡 Como você é da equipe administrativa, o envio de anexo para revisão é opcional.")
                 arquivo_upload = st.file_uploader("Anexar ofício (Opcional):", type=["docx", "pdf"])
@@ -96,7 +95,7 @@ with aba_solicitar:
                 st.info("Utilize a aba 'Acompanhar Pedido' para verificar o andamento.")
 
 # ==========================================
-# ABA 2: ACOMPANHAMENTO (Aberta a todos)
+# ABA 2: ACOMPANHAMENTO E REENVIO
 # ==========================================
 with aba_acompanhar:
     st.markdown("### Consultar andamento do Ofício")
@@ -110,6 +109,7 @@ with aba_acompanhar:
             st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
             st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
             
+            # --- LÓGICA DE REENVIO DE ARQUIVO ---
             if encontrado['status'] == "Correção Solicitada" and encontrado['feedback_admin']:
                 st.markdown(f"""
                 <div class='bloco-alerta'>
@@ -117,6 +117,27 @@ with aba_acompanhar:
                     {encontrado['feedback_admin']}
                 </div>
                 """, unsafe_allow_html=True)
+                
+                st.markdown("#### 🔄 Enviar Nova Versão")
+                st.write("Faça as correções apontadas no seu arquivo e envie a nova versão abaixo para reanálise.")
+                novo_arquivo = st.file_uploader("Anexar arquivo corrigido:", type=["docx", "pdf"], key=f"reup_{encontrado['id']}")
+                
+                if st.button("Reenviar para a Secretaria"):
+                    if novo_arquivo is None:
+                        st.error("Por favor, anexe o arquivo corrigido antes de clicar em reenviar.")
+                    else:
+                        indice = st.session_state.banco_solicitacoes.index(encontrado)
+                        novo_prazo = datetime.now() + timedelta(days=3)
+                        
+                        st.session_state.banco_solicitacoes[indice]["status"] = "Pendente"
+                        st.session_state.banco_solicitacoes[indice]["nome_arquivo"] = novo_arquivo.name
+                        st.session_state.banco_solicitacoes[indice]["bytes_arquivo"] = novo_arquivo.getvalue()
+                        st.session_state.banco_solicitacoes[indice]["feedback_admin"] = ""
+                        st.session_state.banco_solicitacoes[indice]["prazo_limite"] = novo_prazo.strftime("%d/%m/%Y")
+                        
+                        st.success("✅ Nova versão enviada com sucesso! O protocolo voltou para a fila de análise com um novo prazo de 3 dias.")
+                        time.sleep(2)
+                        st.rerun()
         else:
             st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
 
@@ -142,12 +163,10 @@ with aba_gestao:
                     else:
                         st.error("Credenciais inválidas ou acesso não autorizado.")
             
-            # Simulação do botão de enviar senha
             if st.button("Receber nova senha por e-mail"):
                 st.success("Simulação: Um link de acesso/senha foi enviado para o seu e-mail corporativo.")
                 
     else:
-        # PAINEL DA GESTORA (Só aparece se logado)
         col_tit, col_sair = st.columns([4, 1])
         with col_tit:
             st.markdown("### ⚙️ Painel de Aprovação e Numeração")
@@ -156,7 +175,6 @@ with aba_gestao:
                 st.session_state.gestor_logado = False
                 st.rerun()
                 
-        # Filtro para ver apenas os pendentes ou todos
         filtro = st.radio("Filtrar visualização:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
         
         lista_exibicao = st.session_state.banco_solicitacoes
@@ -193,7 +211,7 @@ with aba_gestao:
                     with col2:
                         with st.expander("❌ Solicitar Correção ao Usuário"):
                             feedback = st.text_area("Aponte os erros para correção (ex: faltou assinatura):", key=f"fb_{item['id']}")
-                            if st.button("Devolver Documento"):
+                            if st.button("Devolver Documento", key=f"dev_{item['id']}"):
                                 if not feedback:
                                     st.warning("Escreva o motivo antes de devolver.")
                                 else:
