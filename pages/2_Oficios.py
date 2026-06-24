@@ -1,7 +1,7 @@
 import streamlit as st
 import random
 import io
-import csv
+import pandas as pd
 from datetime import datetime, timedelta
 
 # 1. CONFIGURAÇÃO DA PÁGINA
@@ -13,10 +13,12 @@ st.markdown("""
     .titulo-principal { color: #002147; font-family: 'Arial'; font-weight: bold; margin-bottom: 5px; }
     .cartao-ticket { background-color: #ffffff; padding: 20px; border-radius: 8px; border-left: 6px solid #002147; margin-bottom: 15px; box-shadow: 0px 2px 8px rgba(0,0,0,0.08); }
     
+    /* Cores de Status */
     .status-pendente { background-color: #ffc107; color: #212529; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     .status-aprovado { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     .status-recusado { background-color: #dc3545; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     
+    /* Cores de Perfil */
     .perfil-aluno { background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
     .perfil-professor { background-color: #6f42c1; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
     .perfil-admin { background-color: #343a40; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
@@ -25,19 +27,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. FUNÇÃO ANTI-TRAVAMENTO DE VERSÃO (Garante compatibilidade com qualquer servidor)
-def forçar_recarregamento_tela():
-    try:
-        st.rerun()
-    except AttributeError:
-        st.experimental_rerun()
-
-# 4. SIMULADOR DE MOTOR DE E-MAILS
+# 3. SIMULADOR DE MOTOR DE E-MAILS
 def enviar_email_notificacao(destinatario, assunto, mensagem_html):
     print(f"[LOG SISTEMA] E-mail simulado para {destinatario} | Assunto: {assunto}")
     return True
 
-# 5. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE SESSÃO
+# 4. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE SESSÃO
 if "banco_solicitacoes" not in st.session_state:
     st.session_state.banco_solicitacoes = []
 if "contador_oficio_oficial" not in st.session_state:
@@ -47,12 +42,12 @@ if "gestor_logado" not in st.session_state:
 if "protocolo_buscado" not in st.session_state:
     st.session_state.protocolo_buscado = ""
 
-# CABEÇALHO PÚBLICO
+# CABEÇALHO PÚBLICO - COM O NOVO TÍTULO!
 st.markdown("<h2 class='titulo-principal'>📄 Portal de Emissão de Ofícios</h2>", unsafe_allow_html=True)
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
 
-# 6. SISTEMA DE ABAS (Nome fixo para estabilidade absoluta)
+# 5. SISTEMA DE ABAS 
 aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
 
 # ==========================================
@@ -72,7 +67,7 @@ with aba_solicitar:
     with col_form:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
         
-        with st.form("form_pedido"):
+        with st.form("form_pedido", clear_on_submit=True):
             nome_solicitante = st.text_input("Nome Completo do Solicitante:")
             email_solicitante = st.text_input("E-mail para contato:")
             
@@ -98,11 +93,11 @@ with aba_solicitar:
             
         if enviar:
             if not nome_solicitante or not email_solicitante or not assunto or not destinatario:
-                st.error("❌ Por favor, preencha todos os campos de texto obrigatórios.")
+                st.error("❌ Por favor, preencha todos os campos de texto obrigatórios (Nome, E-mail, Assunto e Destinatário).")
             elif perfil_solicitante in ["Professor", "Administrativo"] and not setor_solicitante:
                 st.error("❌ Por favor, preencha o campo 'Setor Solicitante'.")
             elif perfil_solicitante in ["Professor", "Administrativo"] and not email_solicitante.lower().endswith("@afya.com.br"):
-                st.error("❌ Acesso Bloqueado: Para este perfil, é obrigatório o uso do e-mail institucional (@afya.com.br).")
+                st.error("❌ Acesso Bloqueado: Para perfis de Professor ou Administrativo, é obrigatório o uso do e-mail institucional (@afya.com.br).")
             elif obrigatorio and arquivo_upload is None:
                 st.error("❌ Operação Recusada: O anexo é obrigatório para o seu perfil.")
             else:
@@ -134,14 +129,15 @@ with aba_solicitar:
                 st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
 
 # ==========================================
-# ABA 2: ACOMPANHAMENTO E REENVIO BUSCA INTELIGENTE
+# ABA 2: ACOMPANHAMENTO E REENVIO
 # ==========================================
 with aba_acompanhar:
     st.markdown("### Consultar andamento do Ofício")
     
-    with st.form("form_busca"):
+    with st.form("form_busca", clear_on_submit=True):
         col1, col2 = st.columns([3, 1])
         with col1:
+            # Texto explicativo melhorado para indicar que não importa a letra maiúscula/minúscula
             codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234 ou req-1234):")
         with col2:
             st.write("")
@@ -149,7 +145,7 @@ with aba_acompanhar:
             submit_busca = st.form_submit_button("Buscar Protocolo")
             
         if submit_busca:
-            # Filtro invisível: remove espaços vazios e transforma tudo em maiúsculas
+            # INTELIGÊNCIA APLICADA: .strip() remove espaços vazios acidentais e .upper() joga tudo pra maiúsculo!
             st.session_state.protocolo_buscado = codigo_busca.strip().upper()
             
     if st.session_state.protocolo_buscado:
@@ -160,15 +156,13 @@ with aba_acompanhar:
             st.markdown(f"**Status atual:** {encontrado['status']}")
             st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
             st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
-            
-            data_emissao = encontrado.get('data_emissao', '-')
-            if data_emissao != "-":
-                st.markdown(f"**Data de Emissão (Aprovação):** {data_emissao}")
+            if encontrado['data_emissao'] != "-":
+                st.markdown(f"**Data de Emissão (Aprovação):** {encontrado['data_emissao']}")
             
             if encontrado.get("reenviado") and encontrado['status'] == "Pendente":
                 st.success("✅ Nova versão enviada com sucesso! O documento retornou para a fila de análise da secretaria.")
             
-            if encontrado['status'] == "Correção Solicitada" and encontrado.get('feedback_admin'):
+            if encontrado['status'] == "Correção Solicitada" and encontrado['feedback_admin']:
                 st.markdown(f"""
                 <div class='bloco-alerta'>
                     <strong>⚠️ A Secretaria solicitou ajustes no seu documento:</strong><br>
@@ -177,7 +171,7 @@ with aba_acompanhar:
                 """, unsafe_allow_html=True)
                 
                 st.markdown("#### 🔄 Enviar Nova Versão")
-                with st.form(key=f"form_reenvio_{encontrado['id']}"):
+                with st.form(key=f"form_reenvio_{encontrado['id']}", clear_on_submit=True):
                     novo_arquivo = st.file_uploader("Anexar arquivo corrigido:", type=["docx", "pdf"])
                     btn_reenviar = st.form_submit_button("Reenviar para a Secretaria")
                     
@@ -194,12 +188,12 @@ with aba_acompanhar:
                             st.session_state.banco_solicitacoes[indice]["feedback_admin"] = ""
                             st.session_state.banco_solicitacoes[indice]["prazo_limite"] = novo_prazo.strftime("%d/%m/%Y")
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = True
-                            forçar_recarregamento_tela()
+                            st.rerun() 
         else:
             st.error(f"Protocolo '{st.session_state.protocolo_buscado}' não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO (EXCEL SEGURO)
+# ABA 3: ÁREA DA GESTÃO (COM EXCEL INTELIGENTE)
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -209,11 +203,11 @@ with aba_gestao:
             with st.form("login_gestao"):
                 email = st.text_input("E-mail Institucional (@afya.com.br)")
                 senha = st.text_input("Senha de Acesso", type="password")
-                btn_login = st.form_submit_button("Acessar Panel")
+                btn_login = st.form_submit_button("Acessar Painel")
                 if btn_login:
                     if email == "gestao@afya.com.br" and senha == "afya2026":
                         st.session_state.gestor_logado = True
-                        forçar_recarregamento_tela()
+                        st.rerun()
                     else:
                         st.error("Credenciais inválidas.")
     else:
@@ -221,52 +215,45 @@ with aba_gestao:
         
         col_tit, col_sair = st.columns([4, 1])
         with col_tit:
-            st.markdown(f"### ⚙️ Painel de Trabalho ({qtd_pendentes} pendentes)")
+            st.markdown(f"### ⚙️ Painel de Aprovação ({qtd_pendentes} pendentes)")
         with col_sair:
             if st.button("Sair (Logout)"):
                 st.session_state.gestor_logado = False
-                forçar_recarregamento_tela()
+                st.rerun()
         
         with st.expander("📊 Relatórios e Prestação de Contas (Exportar para Excel)"):
             st.write("Baixe a planilha estruturada com o histórico de todos os ofícios, tempos de resposta e emissões.")
             if not st.session_state.banco_solicitacoes:
                 st.info("Ainda não há dados suficientes para gerar um relatório.")
             else:
-                output = io.StringIO()
-                writer = csv.writer(output, delimiter=';') 
+                df = pd.DataFrame(st.session_state.banco_solicitacoes)
+                df_export = df[['id', 'data_solicitacao', 'data_emissao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']]
+                df_export.columns = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
                 
-                colunas = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
-                writer.writerow(colunas)
-                
-                for item in st.session_state.banco_solicitacoes:
-                    writer.writerow([
-                        item.get('id', '-'),
-                        item.get('data_solicitacao', '-'),
-                        item.get('data_emissao', '-'),
-                        item.get('perfil', '-'),
-                        item.get('nome', 'Não informado'),
-                        item.get('setor', 'Não informado'),
-                        item.get('assunto', 'Não informado'),
-                        item.get('destinatario', 'Não informado'),
-                        item.get('status', '-'),
-                        item.get('numero_oficio', '-')
-                    ])
-                
-                csv_data = output.getvalue().encode('utf-8-sig')
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_export.to_excel(writer, index=False, sheet_name='Ofícios Afya')
+                    worksheet = writer.sheets['Ofícios Afya']
+                    
+                    for idx, col in enumerate(df_export.columns):
+                        series = df_export[col]
+                        max_len = max(series.astype(str).map(len).max(), len(str(col))) + 2
+                        col_letter = chr(65 + idx)
+                        worksheet.column_dimensions[col_letter].width = max_len
                 
                 st.download_button(
-                    label="📥 Baixar Relatório Completo (Excel/CSV)",
-                    data=csv_data,
-                    file_name=f"Relatorio_Oficios_Afya_{datetime.now().strftime('%d_%m_%Y')}.csv",
-                    mime="text/csv",
+                    label="📥 Baixar Relatório Completo (.xlsx)",
+                    data=buffer.getvalue(),
+                    file_name=f"Relatorio_Oficios_Afya_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
         st.markdown("---")
         
         if qtd_pendentes > 0:
-            st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise.")
+            st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
         else:
-            st.success("🎉 **Excelente!** Não há ofícios pendentes na fila.")
+            st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
                 
         filtro = st.radio("Filtrar visualização:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
         
@@ -294,10 +281,10 @@ with aba_gestao:
                         <div style='font-size: 13px; color: #666;'>Requerente: {badge}</div>
                     </div>
                     <hr style='margin: 10px 0; border: 0; border-top: 1px solid #e9ecef;'>
-                    <strong>Nome:</strong> {item.get('nome', 'Não informado')} ({item.get('email', 'N/A')})<br>
+                    <strong>Nome:</strong> {item['nome']} ({item['email']})<br>
                     <strong>Setor:</strong> {item.get('setor', 'Não informado')}<br>
-                    <strong>Assunto:</strong> {item.get('assunto', 'Não informado')}<br>
-                    <strong>Destinatário Final:</strong> {item.get('destinatario', 'Não informado')}<br>
+                    <strong>Assunto:</strong> {item['assunto']}<br>
+                    <strong>Destinatário Final:</strong> {item['destinatario']}<br>
                     <div style='margin-top: 10px;'>
                         <strong>Status:</strong> {item['status']} | <strong>Ofício Gerado:</strong> <span style='color: #002147; font-weight: bold;'>{item['numero_oficio']}</span>
                     </div>
@@ -306,10 +293,10 @@ with aba_gestao:
                 
                 if item.get("bytes_arquivo"):
                     st.download_button(
-                        label=f"📥 Baixar Documento Enviado ({item.get('nome_arquivo', 'arquivo')})", 
+                        label=f"📥 Baixar Documento Enviado ({item['nome_arquivo']})", 
                         data=item["bytes_arquivo"], 
-                        file_name=item.get("nome_arquivo", "documento"), 
-                        key=f"dl_{item['id']}_{item.get('nome_arquivo', 'arq')}"
+                        file_name=item["nome_arquivo"], 
+                        key=f"dl_{item['id']}_{item['nome_arquivo']}"
                     )
                 
                 if item["status"] == "Pendente":
@@ -317,6 +304,7 @@ with aba_gestao:
                     with col1:
                         if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
                             st.session_state.contador_oficio_oficial += 1
+                            
                             oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year}"
                             
                             st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
@@ -324,8 +312,8 @@ with aba_gestao:
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                             st.session_state.banco_solicitacoes[indice]["data_emissao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
                             
-                            enviar_email_notificacao(item.get('email', ''), f"Ofício Aprovado: {item['id']}", "Aprovação simulada")
-                            forçar_recarregamento_tela()
+                            enviar_email_notificacao(item['email'], f"Ofício Aprovado: {item['id']}", "Aprovação simulada")
+                            st.rerun()
                             
                     with col2:
                         with st.expander("❌ Solicitar Correção ao Usuário"):
@@ -338,8 +326,8 @@ with aba_gestao:
                                     st.session_state.banco_solicitacoes[indice]["feedback_admin"] = feedback
                                     st.session_state.banco_solicitacoes[indice]["reenviado"] = False
                                     
-                                    enviar_email_notificacao(item.get('email', ''), f"Correção Solicitada: {item['id']}", "Recusa simulada")
-                                    forçar_recarregamento_tela()
+                                    enviar_email_notificacao(item['email'], f"Correção Solicitada: {item['id']}", "Recusa simulada")
+                                    st.rerun()
                                     
                 elif item["status"] == "Correção Solicitada":
                     st.info("⏳ Aguardando o usuário realizar as correções e enviar a nova versão do documento.")
