@@ -11,7 +11,6 @@ st.set_page_config(page_title="Portal de Bancas - CRIVO", page_icon="🎓", layo
 st.markdown("""
     <style>
     .titulo-principal { color: #800040; font-family: 'Arial'; font-weight: bold; margin-bottom: 5px; }
-    .cartao-banca { background-color: #ffffff; padding: 20px; border-radius: 8px; border-left: 6px solid #800040; margin-bottom: 5px; box-shadow: 0px 2px 8px rgba(0,0,0,0.08); }
     
     .badge-tcci { background-color: #3498db; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
     .badge-tccii { background-color: #2980b9; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
@@ -46,7 +45,7 @@ def liberar_acesso_professor(email_prof, perfil_prof):
     if email_prof and email_prof not in st.session_state.permissoes_acesso:
         st.session_state.permissoes_acesso[email_prof] = {"perfil": perfil_prof, "modulos": []}
 
-# 4. BANCO DE DADOS TEMPORÁRIO (SESSÃO) E CONTROLE DE ACESSO
+# 4. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE ACESSO
 if "bancos_avaliacoes" not in st.session_state:
     st.session_state.bancos_avaliacoes = [] 
 
@@ -180,7 +179,6 @@ def tela_coordenacao():
                     st.markdown("---")
                     st.write("**Composição da Banca Avaliadora**")
                     
-                    # REGRA DE NEGÓCIO ATUALIZADA
                     if modulo_selecionado in ["TCC I", "MCM IV"]:
                         st.write("*Regra do Módulo: Dois avaliadores titulares obrigatórios. Sem suplente.*")
                         col_b1, col_b2 = st.columns(2)
@@ -207,7 +205,6 @@ def tela_coordenacao():
                     btn_salvar = st.form_submit_button("Salvar e Gerar Banca")
                     
                     if btn_salvar:
-                        # Validação atualizada exigindo os dois avaliadores
                         if not titulo or not orientador_email or not avaliador_1_email or not avaliador_2_email or not lista_alunos:
                             st.error("Preencha todos os campos obrigatórios (incluindo os dois avaliadores titulares).")
                         else:
@@ -270,38 +267,42 @@ def tela_coordenacao():
                 if banca.get('avaliador_2_nome'): avaliadores_str += f" | {banca['avaliador_2_nome']}"
                 if banca.get('avaliador_sup_nome'): avaliadores_str += f" | {banca['avaliador_sup_nome']} (Suplente)"
                 
-                cartao_html = (
-                    f"<div class='cartao-banca'>"
-                    f"<div style='display: flex; justify-content: space-between; align-items: center;'>"
-                    f"<div><span class='{classe_cor}'>{banca['modulo']}</span> <span style='color: #666; font-size: 14px;'>{info_piepe} | {banca['data']}</span></div>"
-                    f"<div style='font-size: 13px; color: #800040;'><b>Status:</b> {banca['status']}</div>"
-                    f"</div>"
-                    f"<h4 style='margin-top: 10px; margin-bottom: 5px; color: #333;'>{banca['titulo']}</h4>"
-                    f"<p style='margin: 0; font-size: 14px;'><strong>Orientador:</strong> {banca['orientador_nome']}</p>"
-                    f"<p style='margin: 0; font-size: 14px;'><strong>Avaliadores:</strong> {avaliadores_str}</p>"
-                    f"<hr style='margin: 10px 0; border: 0; border-top: 1px solid #e9ecef;'>"
-                    f"<p style='margin: 0; font-size: 14px;'><strong>Alunos ({len(banca['alunos'])}):</strong> {', '.join(banca['alunos'])}</p>"
-                    f"</div>"
-                )
-                st.markdown(cartao_html, unsafe_allow_html=True)
-                
-                col_btn1, col_btn2, col_vazia = st.columns([2, 2, 6])
                 edit_key = f"edit_{banca['id']}"
-                
                 if edit_key not in st.session_state:
                     st.session_state[edit_key] = False
-                    
-                with col_btn1:
-                    if st.button("✏️ Editar Banca", key=f"btn_{edit_key}", use_container_width=True):
-                        st.session_state[edit_key] = not st.session_state[edit_key]
-                        st.rerun()
-                with col_btn2:
-                    if st.button("🗑️ Excluir Banca", key=f"del_{banca['id']}", use_container_width=True):
-                        st.session_state.bancos_avaliacoes.pop(indice_real)
-                        st.rerun()
                 
-                if st.session_state[edit_key]:
-                    with st.container(border=True):
+                # ENCAPSULAMENTO NATIVO: Uma "caixa" visual que guarda as informações, os botões e a tela de edição!
+                with st.container(border=True):
+                    
+                    # Informações do Cartão
+                    cartao_html = (
+                        f"<div style='border-left: 5px solid #800040; padding-left: 15px; margin-bottom: 15px;'>"
+                        f"<div style='display: flex; justify-content: space-between; align-items: center;'>"
+                        f"<div><span class='{classe_cor}'>{banca['modulo']}</span> <span style='color: #666; font-size: 14px;'>{info_piepe} | {banca['data']}</span></div>"
+                        f"<div style='font-size: 13px; color: #800040;'><b>Status:</b> {banca['status']}</div>"
+                        f"</div>"
+                        f"<h4 style='margin-top: 10px; margin-bottom: 5px; color: #333;'>{banca['titulo']}</h4>"
+                        f"<p style='margin: 0; font-size: 14px;'><strong>Orientador:</strong> {banca['orientador_nome']}</p>"
+                        f"<p style='margin: 0; font-size: 14px;'><strong>Avaliadores:</strong> {avaliadores_str}</p>"
+                        f"<p style='margin: 8px 0 0 0; font-size: 14px;'><strong>Alunos ({len(banca['alunos'])}):</strong> {', '.join(banca['alunos'])}</p>"
+                        f"</div>"
+                    )
+                    st.markdown(cartao_html, unsafe_allow_html=True)
+                    
+                    # Botões de Ação PRESONS DENTRO DA CAIXA
+                    col_btn1, col_btn2, col_vazia = st.columns([2, 2, 6])
+                    with col_btn1:
+                        if st.button("✏️ Editar Banca", key=f"btn_{edit_key}", use_container_width=True):
+                            st.session_state[edit_key] = not st.session_state[edit_key]
+                            st.rerun()
+                    with col_btn2:
+                        if st.button("🗑️ Excluir", key=f"del_{banca['id']}", use_container_width=True):
+                            st.session_state.bancos_avaliacoes.pop(indice_real)
+                            st.rerun()
+                    
+                    # Formulário de Edição também preso dentro da caixa (aparece quando clica em Editar)
+                    if st.session_state[edit_key]:
+                        st.markdown("---")
                         st.markdown("#### ✏️ Alterar Dados da Banca")
                         with st.form(key=f"form_edit_{banca['id']}"):
                             try:
@@ -318,38 +319,37 @@ def tela_coordenacao():
                                 edit_av1 = st.text_input("E-mail Avaliador 1:", value=banca['avaliador_1_email'])
                             with col_e2:
                                 edit_av2 = st.text_input("E-mail Avaliador 2:", value=banca.get('avaliador_2_email', ''))
-                                edit_sup = st.text_input("E-mail Avaliador Suplente:", value=banca.get('avaliador_sup_email', ''))
+                                edit_sup = st.text_input("E-mail Suplente:", value=banca.get('avaliador_sup_email', ''))
                                 
                             edit_alunos = st.text_area("Alunos (um por linha):", value="\n".join(banca['alunos']), height=100)
                             
                             if st.form_submit_button("Salvar Alterações"):
-                                alunos_atualizados = [nome.strip() for nome in edit_alunos.split('\n') if nome.strip()]
-                                
-                                st.session_state.bancos_avaliacoes[indice_real].update({
-                                    "data": edit_data.strftime("%d/%m/%Y"),
-                                    "titulo": edit_titulo,
-                                    "orientador_email": edit_ori,
-                                    "orientador_nome": formatar_nome_email(edit_ori),
-                                    "avaliador_1_email": edit_av1,
-                                    "avaliador_1_nome": formatar_nome_email(edit_av1),
-                                    "avaliador_2_email": edit_av2,
-                                    "avaliador_2_nome": formatar_nome_email(edit_av2) if edit_av2 else "",
-                                    "avaliador_sup_email": edit_sup,
-                                    "avaliador_sup_nome": formatar_nome_email(edit_sup) if edit_sup else "",
-                                    "alunos": alunos_atualizados
-                                })
-                                
-                                liberar_acesso_professor(edit_ori, "Orientador")
-                                liberar_acesso_professor(edit_av1, "Avaliador")
-                                liberar_acesso_professor(edit_av2, "Avaliador")
-                                if edit_sup:
-                                    liberar_acesso_professor(edit_sup, "Avaliador")
-                                
-                                st.session_state[edit_key] = False 
-                                st.toast("✅ Banca atualizada com sucesso!", icon="🔄")
-                                forçar_recarregamento_tela()
-                
-                st.write("") 
+                                if not edit_ori or not edit_av1 or not edit_av2:
+                                    st.error("Orientador e os dois Avaliadores Titulares são obrigatórios.")
+                                else:
+                                    alunos_atualizados = [nome.strip() for nome in edit_alunos.split('\n') if nome.strip()]
+                                    st.session_state.bancos_avaliacoes[indice_real].update({
+                                        "data": edit_data.strftime("%d/%m/%Y"),
+                                        "titulo": edit_titulo,
+                                        "orientador_email": edit_ori,
+                                        "orientador_nome": formatar_nome_email(edit_ori),
+                                        "avaliador_1_email": edit_av1,
+                                        "avaliador_1_nome": formatar_nome_email(edit_av1),
+                                        "avaliador_2_email": edit_av2,
+                                        "avaliador_2_nome": formatar_nome_email(edit_av2),
+                                        "avaliador_sup_email": edit_sup,
+                                        "avaliador_sup_nome": formatar_nome_email(edit_sup) if edit_sup else "",
+                                        "alunos": alunos_atualizados
+                                    })
+                                    
+                                    liberar_acesso_professor(edit_ori, "Orientador")
+                                    liberar_acesso_professor(edit_av1, "Avaliador")
+                                    liberar_acesso_professor(edit_av2, "Avaliador")
+                                    if edit_sup: liberar_acesso_professor(edit_sup, "Avaliador")
+                                    
+                                    st.session_state[edit_key] = False 
+                                    st.toast("✅ Banca atualizada com sucesso!", icon="🔄")
+                                    forçar_recarregamento_tela()
 
 # ==========================================
 # PAINEL 2: AVALIADOR 
@@ -380,7 +380,7 @@ def tela_orientador():
     st.info("🚧 Módulo do Diário de Bordo (Atas Mensais) e Fechamento de Notas será construído aqui!")
 
 # ==========================================
-# ROTEADOR DE TELAS (O CÉREBRO DA NAVEGAÇÃO)
+# ROTEADOR DE TELAS
 # ==========================================
 if st.session_state.usuario_bancas is None:
     tela_login()
