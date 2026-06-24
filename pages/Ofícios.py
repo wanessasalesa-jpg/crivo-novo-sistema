@@ -42,12 +42,12 @@ if "gestor_logado" not in st.session_state:
 if "protocolo_buscado" not in st.session_state:
     st.session_state.protocolo_buscado = ""
 
-# CABEÇALHO PÚBLICO
-st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionais</h2>", unsafe_allow_html=True)
+# CABEÇALHO PÚBLICO - COM O NOVO TÍTULO!
+st.markdown("<h2 class='titulo-principal'>📄 Portal de Emissão de Ofícios</h2>", unsafe_allow_html=True)
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
 
-# 5. SISTEMA DE ABAS (Nome fixo para evitar que a tela pule!)
+# 5. SISTEMA DE ABAS 
 aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
 
 # ==========================================
@@ -109,7 +109,7 @@ with aba_solicitar:
                 st.session_state.banco_solicitacoes.append({
                     "id": id_gerado,
                     "data_solicitacao": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                    "data_emissao": "-", # Nova coluna criada e vazia inicialmente
+                    "data_emissao": "-",
                     "prazo_limite": vencimento.strftime("%d/%m/%Y"),
                     "perfil": perfil_solicitante,
                     "nome": nome_solicitante,
@@ -137,14 +137,16 @@ with aba_acompanhar:
     with st.form("form_busca", clear_on_submit=True):
         col1, col2 = st.columns([3, 1])
         with col1:
-            codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234):")
+            # Texto explicativo melhorado para indicar que não importa a letra maiúscula/minúscula
+            codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234 ou req-1234):")
         with col2:
             st.write("")
             st.write("")
             submit_busca = st.form_submit_button("Buscar Protocolo")
             
         if submit_busca:
-            st.session_state.protocolo_buscado = codigo_busca
+            # INTELIGÊNCIA APLICADA: .strip() remove espaços vazios acidentais e .upper() joga tudo pra maiúsculo!
+            st.session_state.protocolo_buscado = codigo_busca.strip().upper()
             
     if st.session_state.protocolo_buscado:
         encontrado = next((item for item in st.session_state.banco_solicitacoes if item["id"] == st.session_state.protocolo_buscado), None)
@@ -209,7 +211,6 @@ with aba_gestao:
                     else:
                         st.error("Credenciais inválidas.")
     else:
-        # AQUI FICA O AVISO DE PENDÊNCIAS (Protegido e invisível para os alunos)
         qtd_pendentes = sum(1 for item in st.session_state.banco_solicitacoes if item["status"] == "Pendente")
         
         col_tit, col_sair = st.columns([4, 1])
@@ -225,22 +226,19 @@ with aba_gestao:
             if not st.session_state.banco_solicitacoes:
                 st.info("Ainda não há dados suficientes para gerar um relatório.")
             else:
-                # Criando o DataFrame
                 df = pd.DataFrame(st.session_state.banco_solicitacoes)
                 df_export = df[['id', 'data_solicitacao', 'data_emissao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']]
                 df_export.columns = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
                 
-                # GERADOR DE ARQUIVO .XLSX (Excel nativo com autoajuste de colunas)
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_export.to_excel(writer, index=False, sheet_name='Ofícios Afya')
                     worksheet = writer.sheets['Ofícios Afya']
                     
-                    # Lógica matemática para ler o tamanho do texto e abrir a coluna perfeitamente
                     for idx, col in enumerate(df_export.columns):
                         series = df_export[col]
                         max_len = max(series.astype(str).map(len).max(), len(str(col))) + 2
-                        col_letter = chr(65 + idx) # Converte 0 para A, 1 para B, etc.
+                        col_letter = chr(65 + idx)
                         worksheet.column_dimensions[col_letter].width = max_len
                 
                 st.download_button(
@@ -312,12 +310,10 @@ with aba_gestao:
                             st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
                             st.session_state.banco_solicitacoes[indice]["numero_oficio"] = oficio_gerado
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = False
-                            
-                            # CARIMBANDO A DATA E HORA EXATA DA EMISSÃO
                             st.session_state.banco_solicitacoes[indice]["data_emissao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
                             
                             enviar_email_notificacao(item['email'], f"Ofício Aprovado: {item['id']}", "Aprovação simulada")
-                            st.rerun() # Como o nome da aba agora é fixo, a tela não vai pular!
+                            st.rerun()
                             
                     with col2:
                         with st.expander("❌ Solicitar Correção ao Usuário"):
