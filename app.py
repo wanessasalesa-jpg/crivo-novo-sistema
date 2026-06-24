@@ -1,612 +1,339 @@
 import streamlit as st
+import random
+import io
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 from datetime import datetime, timedelta
-import time
-import pytz 
 
 # 1. CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="CRIVO - Gestão Acadêmica", layout="centered")
+st.set_page_config(page_title="Módulo de Ofícios - CRIVO", page_icon="📄", layout="wide")
 
-# Inicia a memória local do dispositivo
-if 'concluidos' not in st.session_state:
-    st.session_state.concluidos = []
-
-# 2. FUSO HORÁRIO DE BRASÍLIA
-fuso_bruta = pytz.timezone('America/Sao_Paulo')
-
-def obter_agora():
-    return datetime.now(fuso_bruta)
-
-# FUNÇÃO PARA ENCURTAR NOMES NA EXIBIÇÃO
-def tratar_nome_curto(nome_completo):
-    if not nome_completo or pd.isna(nome_completo):
-        return ""
-    partes = str(nome_completo).strip().split()
-    if len(partes) == 1:
-        return partes[0]
-    preposicoes = ['de', 'da', 'do', 'das', 'dos', 'e']
-    if partes[1].lower() in preposicoes and len(partes) > 2:
-        return f"{partes[0]} {partes[1]} {partes[2]}"
-    return f"{partes[0]} {partes[1]}"
-
-# 3. CONEXÃO COM GOOGLE SHEETS
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def get_data(aba, ttl_sec=2):
-    return conn.read(worksheet=aba, ttl=ttl_sec)
-
-# --- BLINDAGEM DE CONEXÃO (A MEMÓRIA QUE IMPEDE O RESET DA TELA) ---
-if 'df_escalacao_seguro' not in st.session_state:
-    st.session_state.df_escalacao_seguro = pd.DataFrame()
-
-try:
-    df_escalacao = conn.read(worksheet="Escalacao", ttl=300)
-    df_escalacao.columns = df_escalacao.columns.astype(str).str.strip().str.lower()
-    st.session_state.df_escalacao_seguro = df_escalacao
-except:
-    df_escalacao = st.session_state.df_escalacao_seguro
-    if df_escalacao.empty:
-        st.error("Conectando ao banco de dados... Aguarde.")
-        time.sleep(1)
-        st.rerun()
-
-colunas_respostas_obrigatorias = ["Avaliador", "Email_Avaliador", "Alunos", "Nota_Final", "Papel", "Data_Hora"]
-
-if 'df_respostas_seguro' not in st.session_state:
-    st.session_state.df_respostas_seguro = pd.DataFrame(columns=colunas_respostas_obrigatorias)
-
-try:
-    df_respostas = conn.read(worksheet="Respostas", ttl=60)
-    if df_respostas.empty or not all(col in df_respostas.columns for col in colunas_respostas_obrigatorias):
-        df_respostas = pd.DataFrame(columns=colunas_respostas_obrigatorias)
-    st.session_state.df_respostas_seguro = df_respostas
-except:
-    # Se o Google falhar ao mover um slider, usa a memória salva e a tela não pisca!
-    df_respostas = st.session_state.df_respostas_seguro
-
-
-# --- MAPEAMENTO BLINDADO DE COLUNAS (O RADAR) ---
-def buscar_coluna(palavras_chave, evitar=None):
-    for col in df_escalacao.columns:
-        if all(p in col for p in palavras_chave):
-            if evitar and evitar in col:
-                continue
-            return col
-    return None
-
-c_av1_email = buscar_coluna(['email', '1'])
-c_av1_nome = buscar_coluna(['avaliador', '1'], evitar='email')
-c_av2_email = buscar_coluna(['email', '2'])
-c_av2_nome = buscar_coluna(['avaliador', '2'], evitar='email')
-c_sup_email = buscar_coluna(['email', 'suplente'])
-c_sup_nome = buscar_coluna(['suplente'], evitar='email')
-c_ori_email = buscar_coluna(['email', 'orientador'])
-c_ori_nome = buscar_coluna(['orientador'], evitar='email')
-
-c_turma = buscar_coluna(['turma'])
-c_titulo = buscar_coluna(['titulo']) or buscar_coluna(['título'])
-c_data = buscar_coluna(['data'])
-c_horario = buscar_coluna(['horario']) or buscar_coluna(['horário'])
-c_aptidao_col = buscar_coluna(['aptid', 'defesa'])
-c_assinatura_col = buscar_coluna(['assinatura', 'orientador'])
-
-c_aluno1 = buscar_coluna(['aluno', '1'])
-c_aluno2 = buscar_coluna(['aluno', '2'])
-c_aluno3 = buscar_coluna(['aluno', '3'])
-c_aluno4 = buscar_coluna(['aluno', '4'])
-c_aluno5 = buscar_coluna(['aluno', '5'])
-
-def verificar_presenca_email(email, coluna_real):
-    if not coluna_real or coluna_real not in df_escalacao.columns:
-        return False
-    return email in df_escalacao[coluna_real].astype(str).str.strip().str.lower().unique()
-
-# --- TRAVA DE LOGOUT E IDENTIFICAÇÃO DE PAPEL ---
-if 'email' not in st.session_state:
-    if "user" in st.query_params:
-        st.session_state.email = st.query_params["user"]
-
-if 'email' not in st.session_state:
-    st.markdown("""
-        <style>
-        header {visibility: hidden !important;}
-        #MainMenu {visibility: hidden !important;}
-        footer {visibility: hidden;}
-        .stButton button { width: 100% !important; border-radius: 10px !important; height: 3.5em !important; background-color: #002147 !important; color: white !important; font-weight: bold !important; border: none !important; }
-        </style>
-        """, unsafe_allow_html=True)
-
-    st.title("🎓 CRIVO")
-    st.subheader("Sistema de Gestão de Bancas Acadêmicas")
-    st.caption("© 2026 Desenvolvido por Wanessa Sales de Almeida")
-    st.divider()
-
-    st.write("### Identificação do Docente")
-    email_raw = st.text_input("Digite seu e-mail cadastrado:").strip()
-    if st.button("Acessar Sistema"):
-        if email_raw:
-            email_limpo = email_raw.lower().strip()
-            
-            df_fresh = conn.read(worksheet="Escalacao", ttl=0)
-            df_fresh.columns = df_fresh.columns.astype(str).str.strip().str.lower()
-            
-            id_banca1 = email_limpo in df_fresh[c_av1_email].astype(str).str.strip().str.lower().unique() if c_av1_email else False
-            id_banca2 = email_limpo in df_fresh[c_av2_email].astype(str).str.strip().str.lower().unique() if c_av2_email else False
-            id_suplente = email_limpo in df_fresh[c_sup_email].astype(str).str.strip().str.lower().unique() if c_sup_email else False
-            id_orienta = email_limpo in df_fresh[c_ori_email].astype(str).str.strip().str.lower().unique() if c_ori_email else False
-            
-            if id_banca1 or id_banca2 or id_suplente or id_orienta:
-                st.session_state.clear()
-                st.session_state.concluidos = []
-                st.session_state.email = email_limpo
-                st.query_params["user"] = email_limpo
-                st.rerun()
-            else:
-                st.error("E-mail não autorizado ou não encontrado na escalação.")
-    st.stop()
-
-# --- DEFINIÇÃO DO PAPEL LOGADO ---
-email_user = st.session_state.email
-
-tem_papel_ori = verificar_presenca_email(email_user, c_ori_email)
-tem_papel_av1 = verificar_presenca_email(email_user, c_av1_email)
-tem_papel_av2 = verificar_presenca_email(email_user, c_av2_email)
-tem_papel_sup = verificar_presenca_email(email_user, c_sup_email)
-tem_papel_banca = tem_papel_av1 or tem_papel_av2 or tem_papel_sup
-
-if "perfil_ativo" not in st.session_state:
-    if tem_papel_banca:
-        st.session_state.perfil_ativo = "Banca"
-    else:
-        st.session_state.perfil_ativo = "Orientador"
-
-eh_orientador = (st.session_state.perfil_ativo == "Orientador")
-eh_banca = not eh_orientador
-
-nome_completo_docente = ""
-if eh_orientador and tem_papel_ori:
-    nome_completo_docente = df_escalacao[df_escalacao[c_ori_email].astype(str).str.strip().str.lower() == email_user][c_ori_nome].iloc[0]
-else:
-    if tem_papel_av1 and not df_escalacao[df_escalacao[c_av1_email].astype(str).str.strip().str.lower() == email_user].empty:
-        nome_completo_docente = df_escalacao[df_escalacao[c_av1_email].astype(str).str.strip().str.lower() == email_user][c_av1_nome].iloc[0]
-    elif tem_papel_av2 and not df_escalacao[df_escalacao[c_av2_email].astype(str).str.strip().str.lower() == email_user].empty:
-        nome_completo_docente = df_escalacao[df_escalacao[c_av2_email].astype(str).str.strip().str.lower() == email_user][c_av2_nome].iloc[0]
-    elif tem_papel_sup and not df_escalacao[df_escalacao[c_sup_email].astype(str).str.strip().str.lower() == email_user].empty:
-        nome_completo_docente = df_escalacao[df_escalacao[c_sup_email].astype(str).str.strip().str.lower() == email_user][c_sup_nome].iloc[0]
-
-nome_exibicao = tratar_nome_curto(nome_completo_docente)
-
-# --- DEFINIÇÃO DINÂMICA DE CORES ---
-cor_primaria = "#002147" if not eh_orientador else "#FF1493"
-cor_texto_bloco = "#ffffff"
-
-st.markdown(f"""
+# 2. DESIGN CUSTOMIZADO (CSS)
+st.markdown("""
     <style>
-    header {{visibility: hidden !important;}}
-    #MainMenu {{visibility: hidden !important;}}
-    footer {{visibility: hidden;}}
-    .bloco-cabecalho {{ background-color: {cor_primaria} !important; padding: 25px !important; border-radius: 12px !important; color: {cor_texto_bloco} !important; margin-bottom: 25px !important; box-shadow: 0px 4px 10px rgba(0,0,0,0.1) !important; }}
-    .bloco-cabecalho h1, .bloco-cabecalho h3, .bloco-cabecalho p {{ color: {cor_texto_bloco} !important; margin: 0 !important; padding: 2px 0 !important; }}
-    .stButton button {{ width: 100% !important; border-radius: 10px !important; height: 3.5em !important; background-color: {cor_primaria} !important; color: white !important; font-weight: bold !important; border: none !important; }}
-    </style>
-    """, unsafe_allow_html=True)
-
-sub_titulo_texto = "Sistema de Gestão de Bancas Acadêmicas" if not eh_orientador else "Sistema de Gestão de Orientações"
-st.markdown(f"""
-    <div class="bloco-cabecalho">
-        <h1>🎓 CRIVO</h1>
-        <h3>{sub_titulo_texto}</h3>
-    </div>
-    """, unsafe_allow_html=True)
-
-if tem_papel_ori and tem_papel_banca:
-    st.info("🔄 **Perfil Duplo Detectado:** Você atua como Orientador e também como Avaliador de Banca.")
-    novo_perfil = st.radio("Selecione qual painel acessar agora:", ["Orientador", "Banca"], index=1 if st.session_state.perfil_ativo == "Banca" else 0, horizontal=True)
-    if novo_perfil != st.session_state.perfil_ativo:
-        st.session_state.perfil_ativo = novo_perfil
-        st.rerun()
-
-def obter_lista_alunos_linha(row):
-    lista = []
-    for col_aluno in [c_aluno1, c_aluno2, c_aluno3, c_aluno4, c_aluno5]:
-        if col_aluno and col_aluno in row and pd.notna(row[col_aluno]):
-            nome = str(row[col_aluno]).strip()
-            if nome and nome.lower() != "nan" and nome != "":
-                lista.append(nome)
-    return lista
-
-# --- FILTRAGEM DE GRUPOS PENDENTES EM TEMPO REAL ---
-pendentes = pd.DataFrame()
-total_pendencias_contador = 0
-
-if not df_escalacao.empty:
-    hoje_data = obter_agora().date()
-    if eh_orientador:
-        possiveis = df_escalacao[df_escalacao[c_ori_email].astype(str).str.strip().str.lower() == email_user].copy()
-        linhas_pendentes = []
-        for idx, row in possiveis.iterrows():
-            turma_check = str(row.get(c_turma, "")).strip().upper()
-            tb_clean_check = turma_check.replace(" ", "")
-            
-            if "MCMV" in tb_clean_check or "MCM5" in tb_clean_check:
-                continue
-                
-            # TRAVA DE SEGURANÇA 1: Ignora bancas de dias anteriores
-            try:
-                r_data = str(row.get(c_data, "")).strip()
-                if r_data and datetime.strptime(r_data, "%d/%m/%Y").date() < hoje_data:
-                    continue
-            except:
-                pass
-                
-            alunos_grupo = obter_lista_alunos_linha(row)
-            avaliados_banco = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
-            avaliados_total = list(set(avaliados_banco + st.session_state.concluidos))
-            alunos_restantes = [a for a in alunos_grupo if a not in avaliados_total]
-            
-            ja_preencheu_banco = pd.notna(row.get(c_aptidao_col)) and str(row.get(c_aptidao_col)).strip() != "" if c_aptidao_col else False
-            string_grupo_banca = ", ".join(alunos_grupo)
-            ja_preencheu_sessao = f"aptidao_{string_grupo_banca}" in st.session_state.concluidos
-            
-            precisa_tela_aptidao = ("TCCII" in tb_clean_check or "TCC2" in tb_clean_check) and not ja_preencheu_banco and not ja_preencheu_sessao
-            
-            if alunos_restantes or precisa_tela_aptidao:
-                linhas_pendentes.append(row)
-                total_pendencias_contador += len(alunos_restantes) + (1 if precisa_tela_aptidao and not alunos_restantes else 0)
-        if linhas_pendentes:
-            pendentes = pd.DataFrame(linhas_pendentes)
-    else:
-        cond_banca = pd.Series(False, index=df_escalacao.index)
-        if c_av1_email and c_av1_email in df_escalacao.columns:
-            cond_banca |= (df_escalacao[c_av1_email].astype(str).str.strip().str.lower() == email_user)
-        if c_av2_email and c_av2_email in df_escalacao.columns:
-            cond_banca |= (df_escalacao[c_av2_email].astype(str).str.strip().str.lower() == email_user)
-        if c_sup_email and c_sup_email in df_escalacao.columns:
-            cond_banca |= (df_escalacao[c_sup_email].astype(str).str.strip().str.lower() == email_user)
-            
-        possiveis = df_escalacao[cond_banca].copy()
-        linhas_pendentes = []
-        for idx, row in possiveis.iterrows():
-            # TRAVA DE SEGURANÇA 2: Ignora bancas de dias anteriores
-            try:
-                r_data = str(row.get(c_data, "")).strip()
-                if r_data and datetime.strptime(r_data, "%d/%m/%Y").date() < hoje_data:
-                    continue
-            except:
-                pass
-
-            alunos_grupo = obter_lista_alunos_linha(row)
-            string_grupo_banca = ", ".join(alunos_grupo)
-            
-            ja_avaliou_banco = not df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Banca") & (df_respostas["Alunos"] == string_grupo_banca)].empty
-            ja_avaliou_sessao = string_grupo_banca in st.session_state.concluidos
-            
-            if (not ja_avaliou_banco) and (not ja_avaliou_sessao) and alunos_grupo:
-                linhas_pendentes.append(row)
-                total_pendencias_contador += 1
-        if linhas_pendentes:
-            pendentes = pd.DataFrame(linhas_pendentes)
-
-col_user, col_exit = st.columns([3, 1])
-with col_user:
-    st.write(f"**Docente:** {nome_exibicao} ({'Orientador' if eh_orientador else 'Banca Examinadora'})")
-with col_exit:
-    if st.button("Sair"):
-        if total_pendencias_contador > 0:
-            st.session_state.tentou_sair_com_pendencia = True
-        else:
-            st.session_state.clear()
-            st.query_params.clear()
-            st.rerun()
-
-if st.session_state.get("tentou_sair_com_pendencia", False):
-    st.warning(f"⚠️ **Atenção:** Ainda possui **{total_pendencias_contador}** avaliações pendentes registadas no seu nome!")
-    col_cancela, col_confirma = st.columns(2)
-    with col_cancela:
-        if st.button("🔄 Voltar e Avaliar"):
-            st.session_state.tentou_sair_com_pendencia = False
-            st.rerun()
-    with col_confirma:
-        if st.button("🏃 Sair Mesmo Assim"):
-            st.session_state.clear()
-            st.query_params.clear()
-            st.rerun()
-    st.stop()
-
-if pendentes.empty:
-    st.balloons()
-    st.success("🎉 Todas as suas avaliações pendentes foram concluídas!")
-else:
-    def gerar_display_grupo(row):
-        alunos = obter_lista_alunos_linha(row)
-        return ", ".join([tratar_nome_curto(n) for n in alunos])
-        
-    pendentes['Display_Grupo'] = pendentes.apply(gerar_display_grupo, axis=1)
-    lista_grupos_display = pendentes["Display_Grupo"].tolist()
+    .titulo-principal { color: #002147; font-family: 'Arial'; font-weight: bold; margin-bottom: 5px; }
+    .cartao-ticket { background-color: #ffffff; padding: 20px; border-radius: 8px; border-left: 6px solid #002147; margin-bottom: 15px; box-shadow: 0px 2px 8px rgba(0,0,0,0.08); }
     
-    selecionado_display = st.selectbox("🎯 Escolha o Grupo para Avaliar:", [""] + lista_grupos_display)
+    /* Cores de Status */
+    .status-pendente { background-color: #ffc107; color: #212529; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+    .status-aprovado { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+    .status-recusado { background-color: #dc3545; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+    
+    /* Cores de Perfil */
+    .perfil-aluno { background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .perfil-professor { background-color: #6f42c1; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .perfil-admin { background-color: #343a40; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    
+    .bloco-alerta { background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; border-left: 5px solid #ffeeba; margin-top: 10px; margin-bottom: 15px;}
+    </style>
+""", unsafe_allow_html=True)
 
-    if selecionado_display and selecionado_display != "":
-        dados = pendentes[pendentes["Display_Grupo"] == selecionado_display].iloc[0]
-        turma_bruta = str(dados.get(c_turma, "")).strip()
-        tb_clean = turma_bruta.replace(" ", "").upper()
+# 3. SIMULADOR DE MOTOR DE E-MAILS
+def enviar_email_notificacao(destinatario, assunto, mensagem_html):
+    print(f"[LOG SISTEMA] E-mail simulado para {destinatario} | Assunto: {assunto}")
+    return True
+
+# 4. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE SESSÃO
+if "banco_solicitacoes" not in st.session_state:
+    st.session_state.banco_solicitacoes = []
+if "contador_oficio_oficial" not in st.session_state:
+    st.session_state.contador_oficio_oficial = 0
+if "gestor_logado" not in st.session_state:
+    st.session_state.gestor_logado = False
+if "protocolo_buscado" not in st.session_state:
+    st.session_state.protocolo_buscado = ""
+
+# CABEÇALHO PÚBLICO
+st.markdown("<h2 class='titulo-principal'>📄 Central de Ofícios Institucionais</h2>", unsafe_allow_html=True)
+st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
+st.markdown("---")
+
+# 5. SISTEMA DE ABAS (Nome fixo para evitar que a tela pule!)
+aba_solicitar, aba_acompanhar, aba_gestao = st.tabs(["📤 Nova Solicitação", "🔍 Acompanhar Pedido", "⚙️ Área da Gestão (Restrito)"])
+
+# ==========================================
+# ABA 1: SOLICITAÇÃO
+# ==========================================
+with aba_solicitar:
+    col_form, col_ajuda = st.columns([2, 1])
+    
+    with col_ajuda:
+        st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
+        try:
+            with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
+                st.download_button(label="📄 Baixar Modelo Oficial (.DOCX)", data=file, file_name="Modelo de ofício - Afya (oficial).docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+        except FileNotFoundError:
+            st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
+
+    with col_form:
+        perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
         
-        alunos_reais_lista = obter_lista_alunos_linha(dados)
-        string_grupo_completo = ", ".join(alunos_reais_lista)
-        
-        linha_index_planilha = dados.name + 2 
-        banca_liberada = True
-        msg_trava = ""
-        
-        if not eh_orientador:
-            try:
-                val_data = str(dados.get(c_data, "")).strip()
-                val_horario = str(dados.get(c_horario, "")).strip().lower().replace("h", ":")
-                data_banca = datetime.strptime(val_data, "%d/%m/%Y").date()
-                horario_banca = datetime.strptime(val_horario, "%H:%M").time()
-                dt_banca_completa = fuso_bruta.localize(datetime.combine(data_banca, horario_banca))
+        with st.form("form_pedido", clear_on_submit=True):
+            nome_solicitante = st.text_input("Nome Completo do Solicitante:")
+            email_solicitante = st.text_input("E-mail para contato:")
+            
+            if perfil_solicitante in ["Professor", "Administrativo"]:
+                setor_solicitante = st.text_input("Setor Solicitante (Ex: Coordenação de Medicina, Diretoria):")
+            else:
+                setor_solicitante = "Não se aplica (Aluno)"
                 
-                agora = obter_agora()
-                limite_liberacao = dt_banca_completa - timedelta(minutes=5)
+            st.markdown("---")
+            assunto = st.text_input("Objetivo / Assunto do Documento:")
+            destinatario = st.text_input("Destinatário Final:")
+            
+            if perfil_solicitante == "Administrativo":
+                st.info("💡 Como você é da equipe administrativa, o envio de anexo para revisão é opcional.")
+                arquivo_upload = st.file_uploader("Anexar ofício (Opcional):", type=["docx", "pdf"])
+                obrigatorio = False
+            else:
+                st.warning("⚠️ Atenção: Para Alunos e Professores, o anexo do modelo preenchido é obrigatório.")
+                arquivo_upload = st.file_uploader("Anexar seu ofício preenchido (Obrigatório):", type=["docx", "pdf"])
+                obrigatorio = True
+            
+            enviar = st.form_submit_button("Protocolar Pedido")
+            
+        if enviar:
+            if not nome_solicitante or not email_solicitante or not assunto or not destinatario:
+                st.error("❌ Por favor, preencha todos os campos de texto obrigatórios (Nome, E-mail, Assunto e Destinatário).")
+            elif perfil_solicitante in ["Professor", "Administrativo"] and not setor_solicitante:
+                st.error("❌ Por favor, preencha o campo 'Setor Solicitante'.")
+            elif perfil_solicitante in ["Professor", "Administrativo"] and not email_solicitante.lower().endswith("@afya.com.br"):
+                st.error("❌ Acesso Bloqueado: Para perfis de Professor ou Administrativo, é obrigatório o uso do e-mail institucional (@afya.com.br).")
+            elif obrigatorio and arquivo_upload is None:
+                st.error("❌ Operação Recusada: O anexo é obrigatório para o seu perfil.")
+            else:
+                id_gerado = f"REQ-{random.randint(1000, 9999)}"
+                vencimento = datetime.now() + timedelta(days=3)
+                arquivo_bytes = arquivo_upload.getvalue() if arquivo_upload else None
+                arquivo_nome = arquivo_upload.name if arquivo_upload else "Sem anexo"
                 
-                if agora < limite_liberacao:
-                    banca_liberada = False
-                    msg_trava = f"⏳ Esta avaliação de Banca só estará disponível a partir das {limite_liberacao.strftime('%H:%M')} do dia {data_banca.strftime('%d/%m/%Y')}."
-            except:
-                pass
+                st.session_state.banco_solicitacoes.append({
+                    "id": id_gerado,
+                    "data_solicitacao": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    "data_emissao": "-", # Nova coluna criada e vazia inicialmente
+                    "prazo_limite": vencimento.strftime("%d/%m/%Y"),
+                    "perfil": perfil_solicitante,
+                    "nome": nome_solicitante,
+                    "email": email_solicitante,
+                    "setor": setor_solicitante,
+                    "assunto": assunto,
+                    "destinatario": destinatario,
+                    "status": "Pendente",
+                    "numero_oficio": "-",
+                    "nome_arquivo": arquivo_nome,
+                    "bytes_arquivo": arquivo_bytes,
+                    "feedback_admin": "",
+                    "reenviado": False
+                })
+                
+                enviar_email_notificacao(email_solicitante, f"Protocolo Recebido: {id_gerado}", f"Protocolo {id_gerado}")
+                st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
 
-        with st.expander("📖 Informações do Trabalho", expanded=True):
-            st.write(f"**Turma:** {turma_bruta}")
-            st.write(f"**Título:** {dados.get(c_titulo, '')}")
-            st.write(f"**Orientador:** {str(dados.get(c_ori_nome, '')).strip() if pd.notna(dados.get(c_ori_nome, '')) else ''}")
-            st.write(f"**Integrantes do Grupo:** {string_grupo_completo}")
-            st.write(f"**Data/Horário Cadastrado:** {dados.get(c_data, '')} às {dados.get(c_horario, '')}")
-
-        if not banca_liberada:
-            st.warning(msg_trava)
+# ==========================================
+# ABA 2: ACOMPANHAMENTO E REENVIO
+# ==========================================
+with aba_acompanhar:
+    st.markdown("### Consultar andamento do Ofício")
+    
+    with st.form("form_busca", clear_on_submit=True):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234):")
+        with col2:
+            st.write("")
+            st.write("")
+            submit_busca = st.form_submit_button("Buscar Protocolo")
+            
+        if submit_busca:
+            st.session_state.protocolo_buscado = codigo_busca
+            
+    if st.session_state.protocolo_buscado:
+        encontrado = next((item for item in st.session_state.banco_solicitacoes if item["id"] == st.session_state.protocolo_buscado), None)
+        
+        if encontrado:
+            st.markdown("---")
+            st.markdown(f"**Status atual:** {encontrado['status']}")
+            st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
+            st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
+            if encontrado['data_emissao'] != "-":
+                st.markdown(f"**Data de Emissão (Aprovação):** {encontrado['data_emissao']}")
+            
+            if encontrado.get("reenviado") and encontrado['status'] == "Pendente":
+                st.success("✅ Nova versão enviada com sucesso! O documento retornou para a fila de análise da secretaria.")
+            
+            if encontrado['status'] == "Correção Solicitada" and encontrado['feedback_admin']:
+                st.markdown(f"""
+                <div class='bloco-alerta'>
+                    <strong>⚠️ A Secretaria solicitou ajustes no seu documento:</strong><br>
+                    {encontrado['feedback_admin']}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("#### 🔄 Enviar Nova Versão")
+                with st.form(key=f"form_reenvio_{encontrado['id']}", clear_on_submit=True):
+                    novo_arquivo = st.file_uploader("Anexar arquivo corrigido:", type=["docx", "pdf"])
+                    btn_reenviar = st.form_submit_button("Reenviar para a Secretaria")
+                    
+                    if btn_reenviar:
+                        if novo_arquivo is None:
+                            st.error("Por favor, anexe o arquivo corrigido antes de clicar em reenviar.")
+                        else:
+                            indice = st.session_state.banco_solicitacoes.index(encontrado)
+                            novo_prazo = datetime.now() + timedelta(days=3)
+                            
+                            st.session_state.banco_solicitacoes[indice]["status"] = "Pendente"
+                            st.session_state.banco_solicitacoes[indice]["nome_arquivo"] = novo_arquivo.name
+                            st.session_state.banco_solicitacoes[indice]["bytes_arquivo"] = novo_arquivo.getvalue()
+                            st.session_state.banco_solicitacoes[indice]["feedback_admin"] = ""
+                            st.session_state.banco_solicitacoes[indice]["prazo_limite"] = novo_prazo.strftime("%d/%m/%Y")
+                            st.session_state.banco_solicitacoes[indice]["reenviado"] = True
+                            st.rerun() 
         else:
-            aluno_alvo_final = string_grupo_completo
-            exibir_formulario_notas = True
-            exibir_tela_aptidao_final = False
+            st.error(f"Protocolo '{st.session_state.protocolo_buscado}' não encontrado. Verifique se digitou corretamente.")
 
-            if eh_orientador:
-                if "MCMV" in tb_clean or "MCM5" in tb_clean:
-                    exibir_formulario_notas = False
-                    st.warning("⚠️ Nota do orientador não aplicável para esta turma. A turma MCM V possui 100% da nota final atribuída exclusivamente pela banca examinadora.")
-                else:
-                    avaliados_banco = df_respostas[(df_respostas["Email_Avaliador"] == email_user) & (df_respostas["Papel"] == "Orientador")]["Alunos"].tolist()
-                    avaliados_total = list(set(avaliados_banco + st.session_state.concluidos))
-                    lista_alunos_individuais = [a for a in alunos_reais_lista if a not in avaliados_total]
-                    
-                    if lista_alunos_individuais:
-                        aluno_alvo_final = st.selectbox(
-                            "👤 Selecione o Aluno para atribuir a nota individual:", 
-                            lista_alunos_individuais,
-                            format_func=tratar_nome_curto
-                        )
+# ==========================================
+# ABA 3: ÁREA DA GESTÃO (COM EXCEL INTELIGENTE)
+# ==========================================
+with aba_gestao:
+    if not st.session_state.gestor_logado:
+        st.markdown("### Acesso Restrito - Equipe Administrativa")
+        col_login, col_vazia = st.columns([1, 1])
+        with col_login:
+            with st.form("login_gestao"):
+                email = st.text_input("E-mail Institucional (@afya.com.br)")
+                senha = st.text_input("Senha de Acesso", type="password")
+                btn_login = st.form_submit_button("Acessar Painel")
+                if btn_login:
+                    if email == "gestao@afya.com.br" and senha == "afya2026":
+                        st.session_state.gestor_logado = True
+                        st.rerun()
                     else:
-                        exibir_formulario_notas = False
-                        if "TCCII" in tb_clean or "TCC2" in tb_clean:
-                            exibir_tela_aptidao_final = True
-                        else:
-                            st.success("Todos os alunos deste grupo já foram avaliados por si!")
-
-            if eh_orientador and exibir_tela_aptidao_final:
-                st.markdown("---")
-                st.subheader("📋 TELA 2: Ficha de Aptidão de Defesa (Exclusivo TCC II)")
-                st.info("Parabéns! As avaliações individuais dos alunos foram concluídas. Agora, preencha o parecer de aptidão do grupo para fechar a banca.")
+                        st.error("Credenciais inválidas.")
+    else:
+        # AQUI FICA O AVISO DE PENDÊNCIAS (Protegido e invisível para os alunos)
+        qtd_pendentes = sum(1 for item in st.session_state.banco_solicitacoes if item["status"] == "Pendente")
+        
+        col_tit, col_sair = st.columns([4, 1])
+        with col_tit:
+            st.markdown(f"### ⚙️ Painel de Aprovação ({qtd_pendentes} pendentes)")
+        with col_sair:
+            if st.button("Sair (Logout)"):
+                st.session_state.gestor_logado = False
+                st.rerun()
+        
+        with st.expander("📊 Relatórios e Prestação de Contas (Exportar para Excel)"):
+            st.write("Baixe a planilha estruturada com o histórico de todos os ofícios, tempos de resposta e emissões.")
+            if not st.session_state.banco_solicitacoes:
+                st.info("Ainda não há dados suficientes para gerar um relatório.")
+            else:
+                # Criando o DataFrame
+                df = pd.DataFrame(st.session_state.banco_solicitacoes)
+                df_export = df[['id', 'data_solicitacao', 'data_emissao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']]
+                df_export.columns = ['Protocolo', 'Data Entrada', 'Data Emissão', 'Perfil', 'Nome Solicitante', 'Setor', 'Assunto', 'Destinatário', 'Status Atual', 'Nº Oficial Gerado']
                 
-                with st.form("form_aptidao_tcc2"):
-                    resposta_aptidao = st.radio(
-                        "**O projeto de Trabalho de Conclusão de Curso (TCC II) entregue pelo grupo encontra-se:**",
-                        ["", "APTO para apresentação", "INAPTO para apresentação"],
-                        index=0,
-                        help="Marque a condição de aceitabilidade do trabalho para a defesa."
-                    )
-                    assinatura_texto = st.text_input("**Assinatura Digital (Digite seu Nome Completo para assinar):**", value="").strip()
+                # GERADOR DE ARQUIVO .XLSX (Excel nativo com autoajuste de colunas)
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_export.to_excel(writer, index=False, sheet_name='Ofícios Afya')
+                    worksheet = writer.sheets['Ofícios Afya']
                     
-                    if st.form_submit_button("🚀 ENVIAR PARECER E CONCLUIR BANCA"):
-                        if resposta_aptidao == "" or assinatura_texto == "":
-                            st.error("Por favor, preencha todos os campos obrigatórios.")
-                        else:
-                            with st.spinner("Gravando parecer de aptidão na planilha... Por favor, aguarde."):
-                                sucesso_apt = False
-                                erro_msg_apt = ""
-                                for tentativa in range(3):
-                                     try:
-                                         df_atualizar_linha = conn.read(worksheet="Escalacao", ttl=0)
-                                         df_atualizar_linha.columns = df_atualizar_linha.columns.astype(str).str.strip().str.lower()
-                                         
-                                         if c_aptidao_col in df_atualizar_linha.columns:
-                                             df_atualizar_linha[c_aptidao_col] = df_atualizar_linha[c_aptidao_col].astype(object)
-                                         if c_assinatura_col in df_atualizar_linha.columns:
-                                             df_atualizar_linha[c_assinatura_col] = df_atualizar_linha[c_assinatura_col].astype(object)
-                                         
-                                         df_atualizar_linha.loc[linha_index_planilha - 2, c_aptidao_col] = resposta_aptidao
-                                         df_atualizar_linha.loc[linha_index_planilha - 2, c_assinatura_col] = assinatura_texto
-                                         
-                                         df_atualizar_linha = df_atualizar_linha.fillna("")
-                                         
-                                         conn.update(worksheet="Escalacao", data=df_atualizar_linha)
-                                         sucesso_apt = True
-                                         break
-                                     except Exception as e:
-                                         erro_msg_apt = str(e)
-                                         time.sleep(1)
-                                 
-                                if sucesso_apt:
-                                     st.session_state.concluidos.append(f"aptidao_{string_grupo_completo}")
-                                     st.balloons() 
-                                     st.success("🎉 Ficha de Aptidão registrada com sucesso!")
-                                     time.sleep(1.5)
-                                     st.rerun()
-                                else:
-                                     st.error(f"❌ Erro de comunicação com o Google: {erro_msg_apt}")
-
-            elif exibir_formulario_notas:
-                aluno_para_salvar = aluno_alvo_final
-                rubrica = {}
+                    # Lógica matemática para ler o tamanho do texto e abrir a coluna perfeitamente
+                    for idx, col in enumerate(df_export.columns):
+                        series = df_export[col]
+                        max_len = max(series.astype(str).map(len).max(), len(str(col))) + 2
+                        col_letter = chr(65 + idx) # Converte 0 para A, 1 para B, etc.
+                        worksheet.column_dimensions[col_letter].width = max_len
                 
-                if eh_orientador:
-                    st.info(f"🌱 Avaliando individualmente o discente: **{tratar_nome_curto(aluno_para_salvar)}**")
-                    
-                    if "MCMIV" in tb_clean or "MCM4" in tb_clean:
-                        rubrica = {
-                            "Desenv. - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrando alta responsabilidade e comprometimento no processo de elaboração."),
-                            "Desenv. - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
-                            "Desenv. - Desempenho e Cumprimento de Tarefas": (5, "Desempenho satisfatório, com activities realizadas de forma competente e engajada."),
-                            "Desenv. - Pontualidade e Compromisso": (5, "Pontualidade é mantida consistentemente, demonstrando compromisso com o processo."),
-                            "Responsabilidade com a Aprendizagem": (5, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e aprimoramento."),
-                            "Texto - Justificativa do Estudo": (6, "Apresenta com clareza a relevância científica, social ou profissional; bem estruturada e relacionada ao problema."),
-                            "Texto - Objetivo Geral e Específicos": (6, "Objetivo geral claro, coerente com a justificativa; objetivos específicos bem formulados e articulados."),
-                            "Texto - Fundamentação Teórica / Referências": (6, "Referencial teórico relevante, atualizado (últimos 5 anos em sua maioria) e articulado ao tema."),
-                            "Texto - Metodologia Proposta": (10, "Método bem descrito, adequado aos objetivos, com definição de tipo de estudo, população e análise."),
-                            "Texto - Cronograma de Execução": (1, "Cronograma bem estruturado, com etapas claras e prazos viáveis."),
-                            "Texto - Estrutura, Linguagem e Formatação": (6, "Texto bem escrito, estruturado, sem erros relevantes; segue as normas (ABNT ou Vancouver)."),
-                            "Relatório - Relatório de Pesquisa": (10, "Apreciação técnica do orientador sobre o documento final de conclusão dos dados compilados.")
-                        }
-                    elif "TCCII" in tb_clean or "TCC2" in tb_clean:
-                        rubrica = {
-                            "Discente - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrou alta responsabilidade e comprometimento no processo de elaboração do artigo."),
-                            "Discente - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
-                            "Discente - Desempenho / Cumprimento de Tarefas": (4, "Desempenho satisfatório, com atividades realizadas de forma competente e engajada."),
-                            "Discente - Pontualidade e Compromisso": (3, "Pontualidade é mantida consistentemente, o que demonstra compromisso com o processo."),
-                            "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimoramento."),
-                            "Artigo - Estruturação e Escrita Científica": (5, "Estrutura adequada, com fluidez, concisão e excelência na redação científica."),
-                            "Artigo - Fundamentação e Atualização Bibliográfica": (4, "Fundamentação crítica, bem estruturada e com autores atuais e pertinentes à área médica."),
-                            "Artigo - Apresentação e Discussão dos Resultados": (4, "Resultados apresentados com clareza, com discussão crítica e integration aos achados da literatura."),
-                            "Artigo - Rigor Metodológico": (4, "Métodos bem descritos, compatíveis com o delineamento e objetivos do estudo."),
-                            "Artigo - Conclusão e Relevância Científica": (3, "Conclusão clara, alinhada aos objetivos e resultados, com destaque à relevância científica e aplicabilidade prática.")
-                        }
-                    elif "TCCI" in tb_clean or "TCC1" in tb_clean:
-                        rubrica = {
-                            "Discente - Envolvimento e Responsabilidade": (5, "Participação proativa, demonstrou alta responsabilidade e comprometimento no processo de elaboração do projeto."),
-                            "Discente - Relação com Orientador / Diálogo": (5, "Relação colaborativa, com boa abertura ao diálogo e aceitação de sugestões."),
-                            "Discente - Desempenho / Cumprimento de Tarefas": (4, "Desempenho satisfatório, com atividades realizadas de forma competente e engajada."),
-                            "Discente - Pontualidade e Compromisso": (3, "Pontualidade é mantida consistentemente, demonstrando compromisso com os prazos."),
-                            "Responsabilidade com a Aprendizagem": (3, "Responsabilidade evidente em buscar ativamente oportunidades de aprendizado e de aprimoramento."),
-                            "Projeto - Formulação do Problema e Justificativa": (5, "Problema de pesquisa é excepcionalmente formulado, e a justificativa é altamente persuasiva, atualizada e relevante."),
-                            "Projeto - Objetivos e Hipóteses": (4, "Objetivos são bem formulados e alinhados, e as hipóteses são pertinentes e testáveis."),
-                            "Projeto - Revisão de Literatura": (4, "Revisão de literatura é abrangente, crítica e identifica claramente a relevância do estudo na literatura existente."),
-                            "Projeto - Metodologia e ABNT": (4, "Metodologia é detalhada e abrangente, proporcionando uma compreensão completa; projeto formatado conforme ABNT."),
-                            "Projeto - Considerações Éticas e Viabilidade": (3, "Considerações éticas são discutidas de maneira apropriada, e a viabilidade do estudo é abordada.")
-                        }
+                st.download_button(
+                    label="📥 Baixar Relatório Completo (.xlsx)",
+                    data=buffer.getvalue(),
+                    file_name=f"Relatorio_Oficios_Afya_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        st.markdown("---")
+        
+        if qtd_pendentes > 0:
+            st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
+        else:
+            st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
+                
+        filtro = st.radio("Filtrar visualização:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
+        
+        lista_exibicao = st.session_state.banco_solicitacoes
+        if filtro == "Apenas Pendentes":
+            lista_exibicao = [item for item in lista_exibicao if item["status"] == "Pendente"]
+            
+        if not lista_exibicao and filtro == "Apenas Pendentes":
+            st.info("Nenhuma requisição aguardando análise no momento.")
+        else:
+            for item in reversed(lista_exibicao):
+                indice = st.session_state.banco_solicitacoes.index(item)
+                
+                if item['perfil'] == "Aluno":
+                    badge = "<span class='perfil-aluno'>🧑‍🎓 Aluno</span>"
+                elif item['perfil'] == "Professor":
+                    badge = "<span class='perfil-professor'>👨‍🏫 Professor</span>"
                 else:
-                    st.info("🎓 Você está visualizando a Rubrica de Avaliação da Banca (Nota para o Grupo todo).")
-                    
-                    if "MCMIV" in tb_clean or "MCM4" in tb_clean:
-                        rubrica = {
-                            "Delineamento - Rigor Científico e Metodologia": (10, "Adequação do desenho do estudo, viabilidade técnica e delineamento claro dos procedimentos propostos."),
-                            "Apresentação Oral - Clareza e Domínio": (10, "Domínio conceitual do conteúdo exposto, postura, uso do tempo regulamentar e clareza na defesa oral."),
-                            "Coerência - Estrutura Geral do Projeto": (10, "Lógica interna do manuscrito, alinhamento fluido entre a justificativa, os objetivos e o método.")
-                        }
-                    elif "MCMV" in tb_clean or "MCM5" in tb_clean:
-                        rubrica = {
-                            "Tema/Resumo": (5, "Qualidade técnica do resumo e aderência ao tema."),
-                            "Introdução": (10, "Fundamentação teórica sólida e revisão."),
-                            "Metodologia": (15, "Execução real do método proposto."),
-                            "Resultados": (15, "Apresentação clara dos dados obtidos."),
-                            "Discussão": (20, "Capacidade crítica de comparar resultados."),
-                            "Referências": (5, "Rigor técnico nas citações e bibliografia."),
-                            "Apresentação Oral": (15, "Segurança na defesa dos resultados."),
-                            "Coerência": (10, "União lógica de todas as partes do trabalho."),
-                            "Qualidade Visual": (4, "Profissionalismo na apresentação visual."),
-                            "Tempo": (1, "Intervalo de 15 a 20 minutos de apresentação.")
-                        }
-                    elif "TCCII" in tb_clean or "TCC2" in tb_clean:
-                        rubrica = {
-                            "Tema/Resumo": (4, "Qualidade técnica do resumo e aderência ao tema."),
-                            "Introdução": (5, "Fundamentação teórica sólida e revisão."),
-                            "Metodologia": (5, "Execução real do método proposto."),
-                            "Resultados": (5, "Apresentação clara dos dados obtidos."),
-                            "Discussão": (10, "Capacidade crítica de comparar resultados."),
-                            "Referências": (1, "Rigor técnico nas citações e bibliografia."),
-                            "Apresentação Oral": (10, "Segurança na defesa dos resultados."),
-                            "Coerência": (10, "União lógica de todas as partes do trabalho."),
-                            "Qualidade Visual": (9, "Profissionalismo na apresentação visual."),
-                            "Tempo": (1, "Intervalo de 15 a 20 minutos de apresentação.")
-                        }
-                    elif "TCCI" in tb_clean or "TCC1" in tb_clean:
-                        rubrica = {
-                            "Tema": (3, "Clareza, delimitação e a atualidade do tema proposto."),
-                            "Resumo": (1, "Objetivo, método, resultados esperados and palavras-chave."),
-                            "Introdução": (5, "Contextualização do tema e problema de pesquisa."),
-                            "Justificativa": (5, "Importância do trabalho e contribuição científica."),
-                            "Objetivos": (5, "Objetivo geral e específicos mensuráveis."),
-                            "Metodologia": (10, "Desenho do estudo, criteria e ética."),
-                            "Referências": (1, "Uso de normas ABNT/Vancouver."),
-                            "Apresentação Oral": (10, "Domínio de conteúdo, postura e clareza."),
-                            "Coerência": (10, "Lógica entre introdução, objetivos e métodos."),
-                            "Qualidade Visual": (9, "Organização dos slides e recursos."),
-                            "Tempo": (1, "Intervalo de 10 a 15 minutos de apresentação.")
-                        }
-
-                if rubrica:
-                    v_max = sum(p for p, h in rubrica.values())
-                    st.write(f"### 📝 Critérios (Máximo: {v_max} pontos)")
-                    
-                    # OS SLIDERS FICAM LIVRES PARA ATUALIZAR A SOMA AO VIVO
-                    notas = {}
-                    for item, (p, help_t) in rubrica.items():
-                        if p == 1:
-                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0.0, 1.0, 0.0, step=0.5, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
-                        else:
-                            notas[item] = st.slider(f"**{item} ({p} pts)**", 0, p, 0, help=help_t, key=f"s_{item}_{aluno_para_salvar}")
-
-                    total = sum(notas.values())
-                    
-                    # EXIBIÇÃO DA NOTA AO VIVO BEM DESTACADA
-                    st.markdown(f"<h2 style='text-align: center; color: {cor_primaria};'>Nota Final Atribuída: {total} / {v_max}</h2>", unsafe_allow_html=True)
-                    st.markdown("---")
-
-                    tem_zero = any(v == 0 for v in notas.values())
-                    conf_zero = True
-                    if tem_zero:
-                        st.error("⚠️ Atenção: Existem critérios com nota zero. Verifique se isso está correto.")
-                        conf_zero = st.checkbox("Confirmo que as notas zero são intencionais.", key=f"c_zero_{aluno_para_salvar}")
-
-                    # O SPINNER ENTRA EM AÇÃO SÓ NO CLIQUE
-                    if st.button("🚀 GRAVAR AVALIAÇÃO NO SISTEMA", key=f"btn_save_{aluno_para_salvar}"):
-                        if tem_zero and not conf_zero:
-                            st.warning("Confirme a caixa de notas zero antes de gravar.")
-                        else:
-                            with st.spinner("Sincronizando nota com a planilha do Google... Por favor, aguarde."):
-                                sucesso_nota = False
-                                erro_msg = ""
-                                for tentativa in range(3):
-                                    try:
-                                        df_at = conn.read(worksheet="Respostas", ttl=0)
-                                        
-                                        df_at = df_at.dropna(how="all") 
-                                        if df_at.empty or not all(col in df_at.columns for col in colunas_respostas_obrigatorias):
-                                            df_at = pd.DataFrame(columns=colunas_respostas_obrigatorias)
-                                        
-                                        nova_l = pd.DataFrame([{
-                                            "Avaliador": str(nome_completo_docente), 
-                                            "Email_Avaliador": str(email_user), 
-                                            "Alunos": str(aluno_para_salvar), 
-                                            "Nota_Final": float(total), 
-                                            "Papel": "Orientador" if eh_orientador else "Banca",
-                                            "Data_Hora": obter_agora().strftime("%d/%m/%Y %H:%M")
-                                        }])
-                                        
-                                        df_f = pd.concat([df_at, nova_l], ignore_index=True)
-                                        df_f = df_f.fillna("") 
-                                        
-                                        conn.update(worksheet="Respostas", data=df_f)
-                                        sucesso_nota = True
-                                        break
-                                    except Exception as e:
-                                        erro_msg = str(e)
-                                        time.sleep(1)
-                                
-                                if sucesso_nota:
-                                    st.session_state.concluidos.append(aluno_para_salvar)
-                                    st.session_state.df_respostas_seguro = df_f # Atualiza a memória de segurança interna!
-                                    st.balloons() 
-                                    st.success(f"✅ Sucesso! Nota oficial {total}/{v_max} gravada na planilha.")
-                                    time.sleep(2)
-                                    st.rerun()
+                    badge = "<span class='perfil-admin'>⚙️ Administrativo</span>"
+                
+                st.markdown(f"""
+                <div class='cartao-ticket'>
+                    <div style='display: flex; justify-content: space-between; align-items: center;'>
+                        <div><strong>Protocolo: {item['id']}</strong></div>
+                        <div style='font-size: 13px; color: #666;'>Requerente: {badge}</div>
+                    </div>
+                    <hr style='margin: 10px 0; border: 0; border-top: 1px solid #e9ecef;'>
+                    <strong>Nome:</strong> {item['nome']} ({item['email']})<br>
+                    <strong>Setor:</strong> {item.get('setor', 'Não informado')}<br>
+                    <strong>Assunto:</strong> {item['assunto']}<br>
+                    <strong>Destinatário Final:</strong> {item['destinatario']}<br>
+                    <div style='margin-top: 10px;'>
+                        <strong>Status:</strong> {item['status']} | <strong>Ofício Gerado:</strong> <span style='color: #002147; font-weight: bold;'>{item['numero_oficio']}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if item.get("bytes_arquivo"):
+                    st.download_button(
+                        label=f"📥 Baixar Documento Enviado ({item['nome_arquivo']})", 
+                        data=item["bytes_arquivo"], 
+                        file_name=item["nome_arquivo"], 
+                        key=f"dl_{item['id']}_{item['nome_arquivo']}"
+                    )
+                
+                if item["status"] == "Pendente":
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
+                            st.session_state.contador_oficio_oficial += 1
+                            
+                            oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year}"
+                            
+                            st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
+                            st.session_state.banco_solicitacoes[indice]["numero_oficio"] = oficio_gerado
+                            st.session_state.banco_solicitacoes[indice]["reenviado"] = False
+                            
+                            # CARIMBANDO A DATA E HORA EXATA DA EMISSÃO
+                            st.session_state.banco_solicitacoes[indice]["data_emissao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                            
+                            enviar_email_notificacao(item['email'], f"Ofício Aprovado: {item['id']}", "Aprovação simulada")
+                            st.rerun() # Como o nome da aba agora é fixo, a tela não vai pular!
+                            
+                    with col2:
+                        with st.expander("❌ Solicitar Correção ao Usuário"):
+                            feedback = st.text_area("Aponte os erros para correção:", key=f"fb_{item['id']}")
+                            if st.button("Devolver Documento", key=f"dev_{item['id']}"):
+                                if not feedback:
+                                    st.warning("Escreva o motivo antes de devolver.")
                                 else:
-                                    st.error(f"❌ Falha de comunicação com o Google Sheets: {erro_msg}")
+                                    st.session_state.banco_solicitacoes[indice]["status"] = "Correção Solicitada"
+                                    st.session_state.banco_solicitacoes[indice]["feedback_admin"] = feedback
+                                    st.session_state.banco_solicitacoes[indice]["reenviado"] = False
+                                    
+                                    enviar_email_notificacao(item['email'], f"Correção Solicitada: {item['id']}", "Recusa simulada")
+                                    st.rerun()
+                                    
+                elif item["status"] == "Correção Solicitada":
+                    st.info("⏳ Aguardando o usuário realizar as correções e enviar a nova versão do documento.")
+                
+                st.markdown("---")
