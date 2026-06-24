@@ -29,7 +29,6 @@ st.markdown("""
 
 # 3. SIMULADOR DE MOTOR DE E-MAILS
 def enviar_email_notificacao(destinatario, assunto, mensagem_html):
-    # Simulação para fase de testes
     print(f"[LOG SISTEMA] E-mail simulado para {destinatario} | Assunto: {assunto}")
     return True
 
@@ -72,11 +71,11 @@ with aba_solicitar:
     with col_form:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
         
-        with st.form("form_pedido"):
+        # ADD: clear_on_submit=True esvazia o formulário instantaneamente após o envio!
+        with st.form("form_pedido", clear_on_submit=True):
             nome_solicitante = st.text_input("Nome Completo do Solicitante:")
             email_solicitante = st.text_input("E-mail para contato:")
             
-            # --- NOVO CAMPO: SETOR SOLICITANTE ---
             if perfil_solicitante in ["Professor", "Administrativo"]:
                 setor_solicitante = st.text_input("Setor Solicitante (Ex: Coordenação de Medicina, Diretoria):")
             else:
@@ -119,7 +118,7 @@ with aba_solicitar:
                     "perfil": perfil_solicitante,
                     "nome": nome_solicitante,
                     "email": email_solicitante,
-                    "setor": setor_solicitante, # Gravando o setor!
+                    "setor": setor_solicitante,
                     "assunto": assunto,
                     "destinatario": destinatario,
                     "status": "Pendente",
@@ -130,9 +129,7 @@ with aba_solicitar:
                     "reenviado": False
                 })
                 
-                corpo_email = f"Recebimento de protocolo {id_gerado}"
-                enviar_email_notificacao(email_solicitante, f"Protocolo Recebido: {id_gerado}", corpo_email)
-                
+                enviar_email_notificacao(email_solicitante, f"Protocolo Recebido: {id_gerado}", f"Protocolo {id_gerado}")
                 st.success(f"✅ Pedido enviado com sucesso! Seu protocolo é: **{id_gerado}**")
 
 # ==========================================
@@ -141,19 +138,24 @@ with aba_solicitar:
 with aba_acompanhar:
     st.markdown("### Consultar andamento do Ofício")
     
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234):")
-    with col2:
-        st.write("")
-        st.write("")
-        if st.button("Buscar Protocolo"):
+    # Criado um formulário de busca com clear_on_submit=True para a caixa de texto limpar sozinha
+    with st.form("form_busca", clear_on_submit=True):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234):")
+        with col2:
+            st.write("")
+            st.write("")
+            submit_busca = st.form_submit_button("Buscar Protocolo")
+            
+        if submit_busca:
             st.session_state.protocolo_buscado = codigo_busca
             
     if st.session_state.protocolo_buscado:
         encontrado = next((item for item in st.session_state.banco_solicitacoes if item["id"] == st.session_state.protocolo_buscado), None)
         
         if encontrado:
+            st.markdown("---")
             st.markdown(f"**Status atual:** {encontrado['status']}")
             st.markdown(f"**Número Oficial Emitido:** {encontrado['numero_oficio']}")
             st.markdown(f"**Prazo Limite para Análise:** {encontrado['prazo_limite']}")
@@ -170,7 +172,7 @@ with aba_acompanhar:
                 """, unsafe_allow_html=True)
                 
                 st.markdown("#### 🔄 Enviar Nova Versão")
-                with st.form(key=f"form_reenvio_{encontrado['id']}"):
+                with st.form(key=f"form_reenvio_{encontrado['id']}", clear_on_submit=True):
                     novo_arquivo = st.file_uploader("Anexar arquivo corrigido:", type=["docx", "pdf"])
                     btn_reenviar = st.form_submit_button("Reenviar para a Secretaria")
                     
@@ -189,10 +191,10 @@ with aba_acompanhar:
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = True
                             st.rerun() 
         else:
-            st.error("Protocolo não encontrado. Verifique se digitou corretamente.")
+            st.error(f"Protocolo '{st.session_state.protocolo_buscado}' não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO COM RELATÓRIOS
+# ABA 3: ÁREA DA GESTÃO (COM EXCEL BRASILEIRO E OFÍCIO LIMPO)
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -218,21 +220,17 @@ with aba_gestao:
                 st.session_state.gestor_logado = False
                 st.rerun()
         
-        # --- NOVO BLOCO: GERADOR DE RELATÓRIOS (EXCEL/CSV) ---
         with st.expander("📊 Relatórios e Prestação de Contas (Exportar Dados)"):
             st.write("Baixe a planilha completa com o histórico de todos os ofícios solicitados e emitidos.")
             if not st.session_state.banco_solicitacoes:
                 st.info("Ainda não há dados suficientes para gerar um relatório.")
             else:
-                # Transforma a lista de dicionários em uma Tabela do Pandas
                 df = pd.DataFrame(st.session_state.banco_solicitacoes)
-                # Seleciona apenas as colunas que importam para a planilha (ignora os bytes do arquivo)
                 df_export = df[['id', 'data_solicitacao', 'perfil', 'nome', 'setor', 'assunto', 'destinatario', 'status', 'numero_oficio']]
-                # Renomeia as colunas para o Excel ficar bonito
                 df_export.columns = ['Protocolo', 'Data Solicitação', 'Perfil', 'Nome', 'Setor Solicitante', 'Assunto', 'Destinatário Final', 'Status Atual', 'Nº Oficial Gerado']
                 
-                # Converte para CSV usando utf-8-sig para os acentos ficarem perfeitos no Excel Brasileiro
-                csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
+                # ADD: sep=';' para forçar o formato do Excel Brasileiro!
+                csv_data = df_export.to_csv(index=False, sep=';').encode('utf-8-sig')
                 
                 st.download_button(
                     label="📥 Baixar Relatório em Excel (CSV)",
@@ -243,7 +241,6 @@ with aba_gestao:
                 )
         st.markdown("---")
         
-        # --- PAINEL DE FILA DE TRABALHO ---
         if qtd_pendentes > 0:
             st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
         else:
@@ -268,7 +265,6 @@ with aba_gestao:
                 else:
                     badge = "<span class='perfil-admin'>⚙️ Administrativo</span>"
                 
-                # Exibindo o Setor no Cartão
                 st.markdown(f"""
                 <div class='cartao-ticket'>
                     <div style='display: flex; justify-content: space-between; align-items: center;'>
@@ -299,7 +295,10 @@ with aba_gestao:
                     with col1:
                         if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
                             st.session_state.contador_oficio_oficial += 1
-                            oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year} AFYAMARABÁ/AFYA/COORD. DE CURSO"
+                            
+                            # ADD: O carimbo do ofício agora é limpo e direto, exatamente como solicitado!
+                            oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year}"
+                            
                             st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
                             st.session_state.banco_solicitacoes[indice]["numero_oficio"] = oficio_gerado
                             st.session_state.banco_solicitacoes[indice]["reenviado"] = False
