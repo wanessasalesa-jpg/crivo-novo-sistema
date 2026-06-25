@@ -7,7 +7,7 @@ from datetime import datetime, time
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Portal de Bancas - CRIVO", page_icon="🎓", layout="wide")
 
-# 2. DESIGN CUSTOMIZADO (CSS)
+# 2. DESIGN CUSTOMIZADO (CSS) E CORES DOS MÓDULOS
 st.markdown("""
     <style>
     .titulo-principal { color: #800040; font-family: 'Arial'; font-weight: bold; margin-bottom: 5px; }
@@ -37,6 +37,33 @@ def formatar_nome_email(email):
 def liberar_acesso_professor(email_prof, perfil_prof):
     if email_prof and email_prof not in st.session_state.permissoes_acesso:
         st.session_state.permissoes_acesso[email_prof] = {"perfil": perfil_prof, "modulos": []}
+
+# Função do Radar de Conflitos
+def verificar_conflito_horario(data, horario, lista_emails, id_ignorar=None):
+    if horario == "N/A" or not horario:
+        return False, ""
+    
+    # Remove e-mails vazios da lista
+    emails_validos = set([e for e in lista_emails if e])
+    
+    for b in st.session_state.bancos_avaliacoes:
+        if b['id'] == id_ignorar:
+            continue
+        
+        # Se bater no mesmo dia e na mesma hora...
+        if b['data'] == data and b['horario'] == horario:
+            emails_da_banca_existente = set(filter(None, [
+                b.get('orientador_email'), b.get('coorientador_email'),
+                b.get('avaliador_1_email'), b.get('avaliador_2_email'),
+                b.get('avaliador_sup_email')
+            ]))
+            
+            # Verifica se há intersecção (alguém está nas duas)
+            conflitos = emails_validos.intersection(emails_da_banca_existente)
+            if conflitos:
+                return True, ", ".join(conflitos)
+                
+    return False, ""
 
 ADMIN_EMAILS = ["wanessa.almeida@afya.com.br", "wanessa.salmeida@yahoo.com.br"]
 lista_horarios = [time(h, 0) for h in range(8, 21)]
@@ -85,11 +112,9 @@ def tela_login():
                         is_prof = False
                         nome_encontrado = formatar_nome_email(email)
                         for b in st.session_state.bancos_avaliacoes:
-                            # Busca o professor inclusive como Co-orientador
                             emails_vinculados = [b.get("orientador_email"), b.get("coorientador_email"), b.get("avaliador_1_email"), b.get("avaliador_2_email"), b.get("avaliador_sup_email")]
                             if email in emails_vinculados:
                                 is_prof = True
-                                # Extrai o nome oficial cadastrado na banca
                                 if email == b.get("orientador_email"): nome_encontrado = b.get("orientador_nome")
                                 elif email == b.get("coorientador_email"): nome_encontrado = b.get("coorientador_nome")
                                 elif email == b.get("avaliador_1_email"): nome_encontrado = b.get("avaliador_1_nome")
@@ -184,10 +209,8 @@ def tela_coordenacao():
                     with col_o1: o_nome = st.text_input("Nome Completo do Orientador:")
                     with col_o2: o_email = st.text_input("E-mail do Orientador:").lower().strip()
                     
-                    # CAIXINHA DE CO-ORIENTADOR
-                    tem_coorientador = st.checkbox("Adicionar Co-orientador (Opcional)")
-                    co_nome, co_email = "", ""
-                    if tem_coorientador:
+                    # SUBSTITUIÇÃO DA CHECKBOX PELO EXPANDER (Sem travar o formulário!)
+                    with st.expander("➕ Adicionar Co-orientador (Opcional)"):
                         col_co1, col_co2 = st.columns(2)
                         with col_co1: co_nome = st.text_input("Nome Completo do Co-orientador:")
                         with col_co2: co_email = st.text_input("E-mail do Co-orientador:").lower().strip()
@@ -214,34 +237,41 @@ def tela_coordenacao():
                     lista_alunos = st.text_area("Nomes dos Alunos (um por linha):", height=150)
                     
                     if st.form_submit_button("Salvar e Gerar Banca"):
-                        # Validação de Domínios
                         ori_valido = o_email.endswith("@afya.com.br") or o_email.endswith("@parceiro.afya.com.br")
                         co_valido = True
-                        if tem_coorientador and co_email:
+                        if co_email:
                             co_valido = co_email.endswith("@afya.com.br") or co_email.endswith("@parceiro.afya.com.br")
 
                         precisa_sup = modulo_selecionado not in ["TCC I", "MCM IV"]
+                        hora_str = horario_banca.strftime("%H:%M") if horario_banca else "N/A"
+
+                        # Validação de Conflito de Horário
+                        teve_conflito, emails_em_conflito = verificar_conflito_horario(
+                            data_banca.strftime("%d/%m/%Y"), 
+                            hora_str, 
+                            [o_email, co_email, b1_email, b2_email, bs_email]
+                        )
 
                         if not titulo or not o_nome or not o_email or not b1_nome or not b1_email or not b2_nome or not b2_email or not lista_alunos:
                             st.error("Preencha todos os nomes e e-mails obrigatórios dos titulares e orientação.")
-                        elif tem_coorientador and (not co_nome or not co_email):
-                            st.error("Preencha o Nome e o E-mail do Co-orientador, ou desmarque a caixa.")
+                        elif co_email and not co_nome:
+                            st.error("Preencha o Nome do Co-orientador (ou apague o e-mail se não houver).")
                         elif precisa_sup and (not bs_nome or not bs_email):
                             st.error("Nome e E-mail do Avaliador Suplente são obrigatórios para este módulo.")
                         elif not ori_valido:
                             st.error("O E-mail do Orientador deve pertencer ao domínio @afya.com.br ou parceiro.")
                         elif not co_valido:
                             st.error("O E-mail do Co-orientador deve pertencer ao domínio @afya.com.br ou parceiro.")
+                        elif teve_conflito:
+                            st.error(f"🚨 ALERTA DE CONFLITO! Os seguintes e-mails já estão agendados em outra banca nesta mesma data ({data_banca.strftime('%d/%m/%Y')}) e horário ({hora_str}): {emails_em_conflito}")
                         else:
                             alunos_processados = [nome.strip() for nome in lista_alunos.split('\n') if nome.strip()]
-                            hora_str = horario_banca.strftime("%H:%M") if horario_banca else "N/A"
 
                             nova_banca = {
                                 "id": str(uuid.uuid4())[:8], "modulo": modulo_selecionado, "formato_piepe": formato_piepe,
                                 "data": data_banca.strftime("%d/%m/%Y"), "horario": hora_str, "titulo": titulo,
                                 "orientador_email": o_email, "orientador_nome": o_nome,
-                                "coorientador_email": co_email if tem_coorientador else "", 
-                                "coorientador_nome": co_nome if tem_coorientador else "",
+                                "coorientador_email": co_email, "coorientador_nome": co_nome,
                                 "avaliador_1_email": b1_email, "avaliador_1_nome": b1_nome,
                                 "avaliador_2_email": b2_email, "avaliador_2_nome": b2_nome,
                                 "avaliador_sup_email": bs_email, "avaliador_sup_nome": bs_nome,
@@ -250,7 +280,7 @@ def tela_coordenacao():
                             st.session_state.bancos_avaliacoes.append(nova_banca)
                             
                             liberar_acesso_professor(o_email, "Professor")
-                            if tem_coorientador: liberar_acesso_professor(co_email, "Professor")
+                            if co_email: liberar_acesso_professor(co_email, "Professor")
                             liberar_acesso_professor(b1_email, "Professor")
                             liberar_acesso_professor(b2_email, "Professor")
                             if bs_email: liberar_acesso_professor(bs_email, "Professor")
@@ -264,12 +294,11 @@ def tela_coordenacao():
             with st.expander("📊 Relatório Consolidado (Exportar Excel)"):
                 df_export = pd.DataFrame(st.session_state.bancos_avaliacoes)
                 if not df_export.empty:
-                    # LÓGICA MÁGICA DO EXCEL: Separando os alunos em colunas (Aluno 1, Aluno 2...)
                     max_alunos = df_export['alunos'].apply(lambda x: len(x) if isinstance(x, list) else 0).max()
                     for i in range(max_alunos):
                         df_export[f'Aluno {i+1}'] = df_export['alunos'].apply(lambda x: x[i] if isinstance(x, list) and i < len(x) else "")
                     
-                    df_export = df_export.drop(columns=['alunos']) # Remove a coluna com a lista agrupada
+                    df_export = df_export.drop(columns=['alunos']) 
 
                     buffer = io.BytesIO()
                     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -290,7 +319,6 @@ def tela_coordenacao():
                 info_extras = f"{banca['data']}{hora_texto}"
                 if banca.get('formato_piepe'): info_extras += f" | Formato: {banca['formato_piepe']}"
                 
-                # Montagem das Strings de Professores
                 ori_str = f"{banca['orientador_nome']}"
                 if banca.get('coorientador_nome'): ori_str += f" | <b>Co-orientador:</b> {banca['coorientador_nome']}"
                 
@@ -314,7 +342,6 @@ def tela_coordenacao():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # BOTÕES DE AÇÃO
                     col_btn1, col_btn2, col_vazia = st.columns([2, 2, 6])
                     with col_btn1:
                         if st.button("✏️ Editar Banca", key=f"btn_{edit_key}", use_container_width=True):
@@ -325,7 +352,6 @@ def tela_coordenacao():
                             st.session_state.bancos_avaliacoes.pop(indice_real)
                             st.rerun()
                     
-                    # FORMULÁRIO DE EDIÇÃO EXPANSÍVEL
                     if st.session_state[edit_key]:
                         st.markdown("---")
                         st.markdown("#### ✏️ Alterar Dados da Banca")
@@ -352,9 +378,11 @@ def tela_coordenacao():
                             with col_e1: 
                                 edit_o_nome = st.text_input("Nome Completo Orientador:", value=banca.get('orientador_nome', ''))
                                 edit_o_email = st.text_input("E-mail Orientador:", value=banca['orientador_email'])
-                            with col_e2: 
-                                edit_co_nome = st.text_input("Nome Co-orientador (Opcional):", value=banca.get('coorientador_nome', ''))
-                                edit_co_email = st.text_input("E-mail Co-orientador (Opcional):", value=banca.get('coorientador_email', ''))
+                            
+                            with st.expander("➕ Alterar Co-orientador (Opcional)", expanded=bool(banca.get('coorientador_email'))):
+                                col_eco1, col_eco2 = st.columns(2)
+                                with col_eco1: edit_co_nome = st.text_input("Nome Co-orientador:", value=banca.get('coorientador_nome', ''))
+                                with col_eco2: edit_co_email = st.text_input("E-mail Co-orientador:", value=banca.get('coorientador_email', ''))
                                 
                             st.markdown("---")
                             col_e3, col_e4 = st.columns(2)
@@ -376,18 +404,30 @@ def tela_coordenacao():
                                 ori_valido = edit_o_email.endswith("@afya.com.br") or edit_o_email.endswith("@parceiro.afya.com.br")
                                 co_valido = edit_co_email.endswith("@afya.com.br") or edit_co_email.endswith("@parceiro.afya.com.br") if edit_co_email else True
                                 precisa_sup = banca['modulo'] not in ["TCC I", "MCM IV"]
+                                hora_str = edit_hora.strftime("%H:%M") if edit_hora else "N/A"
+
+                                teve_conflito, emails_em_conflito = verificar_conflito_horario(
+                                    edit_data.strftime("%d/%m/%Y"), 
+                                    hora_str, 
+                                    [edit_o_email, edit_co_email, edit_b1_email, edit_b2_email, edit_bs_email],
+                                    id_ignorar=banca['id'] # O sistema não conflita a banca com ela mesma na edição
+                                )
 
                                 if not edit_titulo or not edit_o_nome or not edit_o_email or not edit_b1_nome or not edit_b1_email or not edit_b2_nome or not edit_b2_email or not edit_alunos: 
                                     st.error("Preencha todos os nomes e e-mails obrigatórios dos titulares e orientação.")
+                                elif edit_co_email and not edit_co_nome:
+                                    st.error("Preencha o Nome do Co-orientador (ou apague o e-mail se não houver).")
                                 elif precisa_sup and (not edit_bs_nome or not edit_bs_email): 
                                     st.error("Nome e E-mail do Avaliador Suplente são obrigatórios para este módulo.")
                                 elif not ori_valido: 
                                     st.error("E-mail do Orientador deve ser @afya.com.br ou parceiro.")
                                 elif not co_valido:
                                     st.error("E-mail do Co-orientador deve ser @afya.com.br ou parceiro.")
+                                elif teve_conflito:
+                                    st.error(f"🚨 ALERTA DE CONFLITO! Os seguintes e-mails já estão agendados em outra banca nesta mesma data e horário: {emails_em_conflito}")
                                 else:
                                     st.session_state.bancos_avaliacoes[indice_real].update({
-                                        "data": edit_data.strftime("%d/%m/%Y"), "horario": edit_hora.strftime("%H:%M") if edit_hora else "N/A",
+                                        "data": edit_data.strftime("%d/%m/%Y"), "horario": hora_str,
                                         "titulo": edit_titulo, 
                                         "orientador_email": edit_o_email, "orientador_nome": edit_o_nome,
                                         "coorientador_email": edit_co_email, "coorientador_nome": edit_co_nome,
