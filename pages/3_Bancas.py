@@ -42,55 +42,76 @@ def obter_classe_cor(modulo):
     }
     return cores.get(modulo, "badge-piepe")
 
-def liberar_acesso_professor(email_prof, perfil_prof):
-    if email_prof and email_prof not in st.session_state.permissoes_acesso:
-        st.session_state.permissoes_acesso[email_prof] = {"perfil": perfil_prof, "modulos": []}
+# A CHAVE MESTRA DO SISTEMA
+ADMIN_EMAILS = ["wanessa.almeida@afya.com.br", "wanessa.salmeida@yahoo.com.br"]
 
-# Lista de Horários Inteiros (08:00 até 20:00)
-lista_horarios = [time(h, 0) for h in range(8, 21)]
-
-# 4. BANCO DE DADOS TEMPORÁRIO E CONTROLE DE ACESSO
+# 4. BANCO DE DADOS TEMPORÁRIO
 if "bancos_avaliacoes" not in st.session_state:
     st.session_state.bancos_avaliacoes = [] 
 
-if "permissoes_acesso" not in st.session_state or isinstance(st.session_state.permissoes_acesso.get("wanessa.almeida@afya.com.br"), str):
-    st.session_state.permissoes_acesso = {
-        "wanessa.almeida@afya.com.br": {"perfil": "Administrador", "modulos": ["Todos"]}
-    }
+# Limpeza de dados antigos: O banco de permissões agora guarda EXCLUSIVAMENTE coordenadores
+if "permissoes_acesso" not in st.session_state:
+    st.session_state.permissoes_acesso = {}
 
 if "usuario_bancas" not in st.session_state:
     st.session_state.usuario_bancas = None 
 
+lista_horarios = [time(h, 0) for h in range(8, 21)]
+
 # ==========================================
-# MÓDULO DE LOGIN
+# MÓDULO DE LOGIN SEPARADO POR PERFIL
 # ==========================================
 def tela_login():
     st.markdown("<h2 class='titulo-principal'>🎓 Portal de Bancas e Avaliações</h2>", unsafe_allow_html=True)
-    st.write("Insira suas credenciais para acessar a sua área.")
     st.markdown("---")
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         with st.form("form_login"):
-            email = st.text_input("E-mail de Acesso:").lower().strip()
-            senha = st.text_input("Senha", type="password")
+            st.write("**1. Escolha o seu Perfil de Acesso:**")
+            tipo_acesso = st.radio(
+                "Perfil:", 
+                ["👑 Administrador (Gestão de Acessos)", "⚙️ Coordenador (Gestão de Bancas)", "📚 Professor (Avaliador/Orientador)"], 
+                label_visibility="collapsed"
+            )
+            
+            st.write("**2. Insira suas credenciais:**")
+            email = st.text_input("E-mail Institucional:").lower().strip()
+            senha = st.text_input("Senha:", type="password")
             submit = st.form_submit_button("Entrar no Sistema", use_container_width=True)
             
             if submit:
-                if email not in st.session_state.permissoes_acesso:
-                    st.error("Email não cadastrado. Procure a coordenação do módulo.")
-                elif senha != "afya2026": 
+                if senha != "afya2026": 
                     st.error("Senha incorreta.")
                 else:
-                    dados_acesso = st.session_state.permissoes_acesso[email]
-                    nome_formatado = formatar_nome_email(email)
-                    st.session_state.usuario_bancas = {
-                        "perfil": dados_acesso["perfil"], 
-                        "email": email, 
-                        "nome": nome_formatado,
-                        "modulos": dados_acesso.get("modulos", [])
-                    }
-                    forçar_recarregamento_tela()
+                    if "Administrador" in tipo_acesso:
+                        if email in ADMIN_EMAILS:
+                            st.session_state.usuario_bancas = {"perfil": "Administrador", "email": email, "nome": formatar_nome_email(email), "modulos": []}
+                            forçar_recarregamento_tela()
+                        else:
+                            st.error("Este e-mail não possui privilégios de Administrador Master.")
+                    
+                    elif "Coordenador" in tipo_acesso:
+                        dados_acesso = st.session_state.permissoes_acesso.get(email)
+                        if dados_acesso and dados_acesso.get("perfil") == "Coordenação":
+                            st.session_state.usuario_bancas = {"perfil": "Coordenação", "email": email, "nome": formatar_nome_email(email), "modulos": dados_acesso.get("modulos", [])}
+                            forçar_recarregamento_tela()
+                        else:
+                            st.error("E-mail não cadastrado como Coordenador. Peça à Administração para liberar seu acesso.")
+                    
+                    elif "Professor" in tipo_acesso:
+                        # Busca o professor dinamicamente nas bancas (sem precisar de cadastro prévio)
+                        is_prof = False
+                        for b in st.session_state.bancos_avaliacoes:
+                            if email in [b.get("orientador_email"), b.get("avaliador_1_email"), b.get("avaliador_2_email"), b.get("avaliador_sup_email")]:
+                                is_prof = True
+                                break
+                        
+                        if is_prof:
+                            st.session_state.usuario_bancas = {"perfil": "Professor", "email": email, "nome": formatar_nome_email(email)}
+                            forçar_recarregamento_tela()
+                        else:
+                            st.error("E-mail não vinculado a nenhuma banca ativa como Orientador ou Avaliador.")
 
 # ==========================================
 # PAINEL 0: ADMINISTRAÇÃO (Master)
@@ -104,28 +125,20 @@ def tela_administracao():
             st.session_state.usuario_bancas = None
             forçar_recarregamento_tela()
             
-    st.info("Nesta área, você delega ou revoga os acessos dos coordenadores.")
+    st.info("Nesta área, você delega ou revoga os acessos dos coordenadores. Para criar bancas, adicione o seu próprio e-mail aqui e faça o login com o perfil de 'Coordenador'.")
     
     with st.expander("➕ Adicionar Novo Coordenador", expanded=True):
         with st.form("form_add_coord", clear_on_submit=True):
             novo_email_coord = st.text_input("E-mail do Coordenador (@afya.com.br):").lower().strip()
-            
-            modulos_delegados = st.multiselect(
-                "Selecione os módulos sob responsabilidade deste coordenador:", 
-                ["TCC I", "TCC II", "MCM IV", "MCM V", "PIEPE"],
-                placeholder="Escolha uma ou mais opções..."
-            )
+            modulos_delegados = st.multiselect("Selecione os módulos sob responsabilidade deste coordenador:", ["TCC I", "TCC II", "MCM IV", "MCM V", "PIEPE"])
             
             if st.form_submit_button("Conceder Acesso de Coordenação"):
-                if not novo_email_coord.endswith("@afya.com.br"):
-                    st.error("Insira um e-mail válido da Afya.")
+                if not novo_email_coord.endswith("@afya.com.br") and not novo_email_coord.endswith("@yahoo.com.br"):
+                    st.error("Insira um e-mail válido da instituição.")
                 elif not modulos_delegados:
-                    st.error("Selecione pelo menos um módulo para este coordenador.")
+                    st.error("Selecione pelo menos um módulo.")
                 else:
-                    st.session_state.permissoes_acesso[novo_email_coord] = {
-                        "perfil": "Coordenação", 
-                        "modulos": modulos_delegados
-                    }
+                    st.session_state.permissoes_acesso[novo_email_coord] = {"perfil": "Coordenação", "modulos": modulos_delegados}
                     st.toast(f"✅ Acesso concedido para {novo_email_coord}!", icon="🔐")
                     forçar_recarregamento_tela()
                 
@@ -134,7 +147,6 @@ def tela_administracao():
         if isinstance(dados, dict) and dados.get("perfil") == "Coordenação":
             with st.container(border=True):
                 st.markdown(f"**👤 {formatar_nome_email(email)}** ({email})")
-                
                 mods_atuais = dados.get("modulos", [])
                 novos_mods = st.multiselect(f"Módulos autorizados:", ["TCC I", "TCC II", "MCM IV", "MCM V", "PIEPE"], default=mods_atuais, key=f"mod_{email}")
                 
@@ -162,23 +174,15 @@ def tela_coordenacao():
             
     aba_criar, aba_gerenciar = st.tabs(["➕ Criar Novo Grupo/Banca", "📋 Controle e Edição"])
     
-    # --- ABA DE CRIAÇÃO ---
     with aba_criar:
         modulos_permitidos = st.session_state.usuario_bancas["modulos"]
-        
         if not modulos_permitidos:
             st.warning("Você não tem módulos atribuídos à sua coordenação. Fale com a Administração.")
         else:
-            modulo_selecionado = st.selectbox(
-                "Selecione o Módulo da Avaliação:", 
-                modulos_permitidos,
-                index=None,
-                placeholder="Selecione um módulo..."
-            )
+            modulo_selecionado = st.selectbox("Selecione o Módulo da Avaliação:", modulos_permitidos, index=None)
             
             formato_piepe = None
             if modulo_selecionado == "PIEPE":
-                st.warning("⚠️ PIEPE: Defina o formato da apresentação.")
                 formato_piepe = st.radio("Formato de Avaliação:", ["Slide", "Banner"], horizontal=True)
 
             if modulo_selecionado:
@@ -204,7 +208,6 @@ def tela_coordenacao():
                     st.write("**Composição da Banca Avaliadora** *(Avaliadores externos não possuem restrição de e-mail)*")
                     
                     if modulo_selecionado in ["TCC I", "MCM IV"]:
-                        st.write("*Regra do Módulo: Dois avaliadores titulares obrigatórios. Sem suplente.*")
                         col_b1, col_b2 = st.columns(2)
                         with col_b1:
                             avaliador_1_email = st.text_input("E-mail Avaliador Titular 1:").lower().strip()
@@ -212,7 +215,6 @@ def tela_coordenacao():
                             avaliador_2_email = st.text_input("E-mail Avaliador Titular 2:").lower().strip()
                         avaliador_sup_email = ""
                     else:
-                        st.write("*Regra do Módulo: Dois avaliadores titulares e um suplente obrigatório.*")
                         col_b1, col_b2, col_b3 = st.columns(3)
                         with col_b1:
                             avaliador_1_email = st.text_input("E-mail Avaliador Titular 1:").lower().strip()
@@ -225,9 +227,7 @@ def tela_coordenacao():
                     st.write("**Integrantes do Grupo**")
                     lista_alunos = st.text_area("Nomes dos Alunos (um por linha):", height=150)
                     
-                    btn_salvar = st.form_submit_button("Salvar e Gerar Banca")
-                    
-                    if btn_salvar:
+                    if st.form_submit_button("Salvar e Gerar Banca"):
                         ori_valido = orientador_email.endswith("@afya.com.br") or orientador_email.endswith("@parceiro.afya.com.br")
                         precisa_sup = modulo_selecionado not in ["TCC I", "MCM IV"]
 
@@ -242,37 +242,17 @@ def tela_coordenacao():
                             hora_str = horario_banca.strftime("%H:%M") if horario_banca else "N/A"
 
                             nova_banca = {
-                                "id": str(uuid.uuid4())[:8],
-                                "modulo": modulo_selecionado,
-                                "formato_piepe": formato_piepe,
-                                "data": data_banca.strftime("%d/%m/%Y"),
-                                "horario": hora_str,
-                                "titulo": titulo,
-                                "orientador_email": orientador_email,
-                                "orientador_nome": formatar_nome_email(orientador_email),
-                                "avaliador_1_email": avaliador_1_email,
-                                "avaliador_1_nome": formatar_nome_email(avaliador_1_email),
-                                "avaliador_2_email": avaliador_2_email,
-                                "avaliador_2_nome": formatar_nome_email(avaliador_2_email),
-                                "avaliador_sup_email": avaliador_sup_email,
-                                "avaliador_sup_nome": formatar_nome_email(avaliador_sup_email) if avaliador_sup_email else "",
-                                "alunos": alunos_processados,
-                                "status": "Aguardando Avaliação",
-                                "notas_banca": [],
-                                "nota_orientador": None,
-                                "nota_final": None
+                                "id": str(uuid.uuid4())[:8], "modulo": modulo_selecionado, "formato_piepe": formato_piepe,
+                                "data": data_banca.strftime("%d/%m/%Y"), "horario": hora_str, "titulo": titulo,
+                                "orientador_email": orientador_email, "orientador_nome": formatar_nome_email(orientador_email),
+                                "avaliador_1_email": avaliador_1_email, "avaliador_1_nome": formatar_nome_email(avaliador_1_email),
+                                "avaliador_2_email": avaliador_2_email, "avaliador_2_nome": formatar_nome_email(avaliador_2_email),
+                                "avaliador_sup_email": avaliador_sup_email, "avaliador_sup_nome": formatar_nome_email(avaliador_sup_email) if avaliador_sup_email else "",
+                                "alunos": alunos_processados, "status": "Aguardando Avaliação", "notas_banca": [], "nota_orientador": None, "nota_final": None
                             }
                             st.session_state.bancos_avaliacoes.append(nova_banca)
-                            
-                            liberar_acesso_professor(orientador_email, "Orientador")
-                            liberar_acesso_professor(avaliador_1_email, "Avaliador")
-                            liberar_acesso_professor(avaliador_2_email, "Avaliador")
-                            if avaliador_sup_email:
-                                liberar_acesso_professor(avaliador_sup_email, "Avaliador")
-                            
-                            st.toast("✅ Banca criada com sucesso e acessos liberados!", icon="🎉")
+                            st.toast("✅ Banca criada com sucesso!", icon="🎉")
 
-    # --- ABA DE GERENCIAMENTO E EDIÇÃO ---
     with aba_gerenciar:
         if not st.session_state.bancos_avaliacoes:
             st.info("Nenhuma banca cadastrada.")
@@ -280,32 +260,26 @@ def tela_coordenacao():
             with st.expander("📊 Relatório Consolidado (Exportar Excel)"):
                 df_export = pd.DataFrame(st.session_state.bancos_avaliacoes)
                 
-                # O BLINDAGEM DO EXCEL: Só roda se existirem bancas
                 if not df_export.empty:
-                    df_export['alunos'] = df_export['alunos'].apply(lambda x: ", ".join(x) if isinstance(x, list) else x)
+                    df_export['alunos'] = df_export['alunos'].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
                     buffer = io.BytesIO()
                     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                         df_export.to_excel(writer, index=False, sheet_name='Bancas')
                         worksheet = writer.sheets['Bancas']
+                        # CÁLCULO DE LARGURA SEGURO: Usando métodos nativos do Python
                         for idx, col in enumerate(df_export.columns):
-                            series = df_export[col]
-                            max_len = max(series.astype(str).map(len).max() if not series.empty else 0, len(str(col))) + 2
+                            col_data = df_export[col].astype(str).tolist()
+                            col_data.append(str(col)) 
+                            max_len = max([len(item) for item in col_data]) + 2
                             col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
-                            worksheet.column_dimensions[col_letter].width = max_len
+                            worksheet.column_dimensions[col_letter].width = min(max_len, 50)
                     
-                    st.download_button(
-                        label="📥 Baixar Planilha de Notas e Grupos (.xlsx)",
-                        data=buffer.getvalue(),
-                        file_name=f"Relatorio_Bancas_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
+                    st.download_button(label="📥 Baixar Planilha de Notas e Grupos (.xlsx)", data=buffer.getvalue(), file_name=f"Relatorio_Bancas_{datetime.now().strftime('%d_%m_%Y')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
             st.markdown("---")
             for i, banca in enumerate(reversed(st.session_state.bancos_avaliacoes)):
                 indice_real = len(st.session_state.bancos_avaliacoes) - 1 - i
                 classe_cor = obter_classe_cor(banca['modulo'])
-                
                 hora_texto = f" às {banca.get('horario')}" if banca.get('horario') and banca.get('horario') != "N/A" else ""
                 info_extras = f"{banca['data']}{hora_texto}"
                 if banca.get('formato_piepe'): info_extras += f" | Formato: {banca['formato_piepe']}"
@@ -315,23 +289,21 @@ def tela_coordenacao():
                 if banca.get('avaliador_sup_nome'): avaliadores_str += f" | {banca['avaliador_sup_nome']} (Suplente)"
                 
                 edit_key = f"edit_{banca['id']}"
-                if edit_key not in st.session_state:
-                    st.session_state[edit_key] = False
+                if edit_key not in st.session_state: st.session_state[edit_key] = False
                 
                 with st.container(border=True):
-                    cartao_html = (
-                        f"<div style='border-left: 5px solid #800040; padding-left: 15px; margin-bottom: 15px;'>"
-                        f"<div style='display: flex; justify-content: space-between; align-items: center;'>"
-                        f"<div><span class='{classe_cor}'>{banca['modulo']}</span> <span style='color: #666; font-size: 14px;'> | {info_extras}</span></div>"
-                        f"<div style='font-size: 13px; color: #800040;'><b>Status:</b> {banca['status']}</div>"
-                        f"</div>"
-                        f"<h4 style='margin-top: 10px; margin-bottom: 5px; color: #333;'>{banca['titulo']}</h4>"
-                        f"<p style='margin: 0; font-size: 14px;'><strong>Orientador:</strong> {banca['orientador_nome']}</p>"
-                        f"<p style='margin: 0; font-size: 14px;'><strong>Avaliadores:</strong> {avaliadores_str}</p>"
-                        f"<p style='margin: 8px 0 0 0; font-size: 14px;'><strong>Alunos ({len(banca['alunos'])}):</strong> {', '.join(banca['alunos'])}</p>"
-                        f"</div>"
-                    )
-                    st.markdown(cartao_html, unsafe_allow_html=True)
+                    st.markdown(f"""
+                    <div style='border-left: 5px solid #800040; padding-left: 15px; margin-bottom: 15px;'>
+                        <div style='display: flex; justify-content: space-between; align-items: center;'>
+                            <div><span class='{classe_cor}'>{banca['modulo']}</span> <span style='color: #666; font-size: 14px;'> | {info_extras}</span></div>
+                            <div style='font-size: 13px; color: #800040;'><b>Status:</b> {banca['status']}</div>
+                        </div>
+                        <h4 style='margin-top: 10px; margin-bottom: 5px; color: #333;'>{banca['titulo']}</h4>
+                        <p style='margin: 0; font-size: 14px;'><strong>Orientador:</strong> {banca['orientador_nome']}</p>
+                        <p style='margin: 0; font-size: 14px;'><strong>Avaliadores:</strong> {avaliadores_str}</p>
+                        <p style='margin: 8px 0 0 0; font-size: 14px;'><strong>Alunos ({len(banca['alunos'])}):</strong> {', '.join(banca['alunos'])}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
                     
                     col_btn1, col_btn2, col_vazia = st.columns([2, 2, 6])
                     with col_btn1:
@@ -347,26 +319,20 @@ def tela_coordenacao():
                         st.markdown("---")
                         st.markdown("#### ✏️ Alterar Dados da Banca")
                         with st.form(key=f"form_edit_{banca['id']}"):
-                            try:
-                                data_obj = datetime.strptime(banca['data'], "%d/%m/%Y").date()
-                            except:
-                                data_obj = datetime.now().date()
+                            try: data_obj = datetime.strptime(banca['data'], "%d/%m/%Y").date()
+                            except: data_obj = datetime.now().date()
                                 
                             try:
                                 h, m = map(int, banca.get('horario', '08:00').split(':'))
                                 hora_obj = time(h, m)
                                 if hora_obj not in lista_horarios: hora_obj = time(8, 0)
-                            except:
-                                hora_obj = time(8, 0)
+                            except: hora_obj = time(8, 0)
                                 
                             col_ed1, col_ed2 = st.columns(2)
-                            with col_ed1:
-                                edit_data = st.date_input("Data da Defesa:", value=data_obj, format="DD/MM/YYYY")
+                            with col_ed1: edit_data = st.date_input("Data da Defesa:", value=data_obj, format="DD/MM/YYYY")
                             with col_ed2:
-                                if banca['modulo'] != "PIEPE":
-                                    edit_hora = st.selectbox("Horário:", lista_horarios, index=lista_horarios.index(hora_obj), format_func=lambda t: t.strftime('%H:%M'))
-                                else:
-                                    edit_hora = None
+                                if banca['modulo'] != "PIEPE": edit_hora = st.selectbox("Horário:", lista_horarios, index=lista_horarios.index(hora_obj), format_func=lambda t: t.strftime('%H:%M'))
+                                else: edit_hora = None
                                     
                             edit_titulo = st.text_input("Título do Projeto/Trabalho:", value=banca['titulo'])
                             
@@ -384,80 +350,37 @@ def tela_coordenacao():
                                 ori_valido = edit_ori.endswith("@afya.com.br") or edit_ori.endswith("@parceiro.afya.com.br")
                                 precisa_sup = banca['modulo'] not in ["TCC I", "MCM IV"]
 
-                                if not edit_ori or not edit_av1 or not edit_av2:
-                                    st.error("Orientador e os dois Avaliadores Titulares são obrigatórios.")
-                                elif precisa_sup and not edit_sup:
-                                    st.error("O E-mail do Avaliador Suplente é obrigatório para este módulo.")
-                                elif not ori_valido:
-                                    st.error("O E-mail do Orientador deve pertencer ao domínio @afya.com.br ou @parceiro.afya.com.br.")
+                                if not edit_ori or not edit_av1 or not edit_av2: st.error("Orientador e os dois Avaliadores Titulares são obrigatórios.")
+                                elif precisa_sup and not edit_sup: st.error("O E-mail do Avaliador Suplente é obrigatório.")
+                                elif not ori_valido: st.error("E-mail do Orientador deve ser @afya.com.br ou parceiro.")
                                 else:
-                                    alunos_atualizados = [nome.strip() for nome in edit_alunos.split('\n') if nome.strip()]
-                                    hora_str = edit_hora.strftime("%H:%M") if edit_hora else "N/A"
-                                    
                                     st.session_state.bancos_avaliacoes[indice_real].update({
-                                        "data": edit_data.strftime("%d/%m/%Y"),
-                                        "horario": hora_str,
-                                        "titulo": edit_titulo,
-                                        "orientador_email": edit_ori,
-                                        "orientador_nome": formatar_nome_email(edit_ori),
-                                        "avaliador_1_email": edit_av1,
-                                        "avaliador_1_nome": formatar_nome_email(edit_av1),
-                                        "avaliador_2_email": edit_av2,
-                                        "avaliador_2_nome": formatar_nome_email(edit_av2),
-                                        "avaliador_sup_email": edit_sup,
-                                        "avaliador_sup_nome": formatar_nome_email(edit_sup) if edit_sup else "",
-                                        "alunos": alunos_atualizados
+                                        "data": edit_data.strftime("%d/%m/%Y"), "horario": edit_hora.strftime("%H:%M") if edit_hora else "N/A",
+                                        "titulo": edit_titulo, "orientador_email": edit_ori, "orientador_nome": formatar_nome_email(edit_ori),
+                                        "avaliador_1_email": edit_av1, "avaliador_1_nome": formatar_nome_email(edit_av1),
+                                        "avaliador_2_email": edit_av2, "avaliador_2_nome": formatar_nome_email(edit_av2),
+                                        "avaliador_sup_email": edit_sup, "avaliador_sup_nome": formatar_nome_email(edit_sup) if edit_sup else "",
+                                        "alunos": [nome.strip() for nome in edit_alunos.split('\n') if nome.strip()]
                                     })
-                                    
-                                    liberar_acesso_professor(edit_ori, "Orientador")
-                                    liberar_acesso_professor(edit_av1, "Avaliador")
-                                    liberar_acesso_professor(edit_av2, "Avaliador")
-                                    if edit_sup: liberar_acesso_professor(edit_sup, "Avaliador")
-                                    
                                     st.session_state[edit_key] = False 
-                                    st.toast("✅ Banca atualizada com sucesso!", icon="🔄")
+                                    st.toast("✅ Banca atualizada!", icon="🔄")
                                     forçar_recarregamento_tela()
 
 # ==========================================
-# PAINEL 2: AVALIADOR 
+# PAINEL DO PROFESSOR (Avaliador e Orientador unificados)
 # ==========================================
-def tela_avaliador():
+def tela_professor():
     col_titulo, col_logout = st.columns([4, 1])
-    with col_titulo:
-        st.markdown(f"### 📱 Painel do Avaliador | Olá, {st.session_state.usuario_bancas['nome']}")
-    with col_logout:
-        if st.button("Sair (Logout)"):
-            st.session_state.usuario_bancas = None
-            forçar_recarregamento_tela()
-    
-    st.info("🚧 Módulo de preenchimento de notas (com caixas de seleção à prova de erros) será construído aqui na próxima etapa!")
-
-# ==========================================
-# PAINEL 3: ORIENTADOR 
-# ==========================================
-def tela_orientador():
-    col_titulo, col_logout = st.columns([4, 1])
-    with col_titulo:
-        st.markdown(f"### 📚 Painel do Orientador | Olá, {st.session_state.usuario_bancas['nome']}")
+    with col_titulo: st.markdown(f"### 📚 Painel do Professor | Olá, {st.session_state.usuario_bancas['nome']}")
     with col_logout:
         if st.button("Sair (Logout)"):
             st.session_state.usuario_bancas = None
             forçar_recarregamento_tela()
             
-    st.info("🚧 Módulo do Diário de Bordo (Atas Mensais) e Fechamento de Notas será construído aqui!")
+    st.info("🚧 Módulo de preenchimento de notas e emissão de Atas será construído aqui na próxima etapa!")
 
-# ==========================================
-# ROTEADOR DE TELAS
-# ==========================================
-if st.session_state.usuario_bancas is None:
-    tela_login()
-else:
-    perfil_atual = st.session_state.usuario_bancas["perfil"]
-    if perfil_atual == "Administrador":
-        tela_administracao()
-    elif perfil_atual == "Coordenação":
-        tela_coordenacao()
-    elif perfil_atual == "Avaliador":
-        tela_avaliador()
-    elif perfil_atual == "Orientador":
-        tela_orientador()
+# ROTEADOR
+if st.session_state.usuario_bancas is None: tela_login()
+elif st.session_state.usuario_bancas["perfil"] == "Administrador": tela_administracao()
+elif st.session_state.usuario_bancas["perfil"] == "Coordenação": tela_coordenacao()
+elif st.session_state.usuario_bancas["perfil"] == "Professor": tela_professor()
