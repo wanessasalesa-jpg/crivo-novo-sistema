@@ -54,7 +54,7 @@ ADMIN_EMAILS = ["wanessa.almeida@afya.com.br", "wanessa.salmeida@yahoo.com.br"]
 lista_horarios_base = [time(h, 0) for h in range(8, 21)]
 lista_salas_base = [f"APG {i:02d}" for i in range(1, 13)]
 
-# 4. INICIALIZAÇÃO DO BANCO DE DADOS (Com Grupos de Teste Fixos)
+# 4. INICIALIZAÇÃO DO BANCO DE DADOS 
 if "bancos_avaliacoes" not in st.session_state:
     st.session_state.bancos_avaliacoes = [
         {
@@ -85,15 +85,15 @@ if "permissoes_acesso" not in st.session_state:
         "ana.rosas@afya.com.br": {"perfil": "Professor", "modulos": []}
     }
 
-# BLINDAGEM ANTI-ERRO (Atualiza chaves faltantes na memória de configurações)
 if "configuracoes" not in st.session_state: st.session_state.configuracoes = {}
 if "agendamento_aberto" not in st.session_state.configuracoes: st.session_state.configuracoes["agendamento_aberto"] = False
 if "salas_disponiveis" not in st.session_state.configuracoes: st.session_state.configuracoes["salas_disponiveis"] = lista_salas_base.copy()
 if "horarios_disponiveis" not in st.session_state.configuracoes: st.session_state.configuracoes["horarios_disponiveis"] = [t.strftime('%H:%M') for t in lista_horarios_base]
 
-# Memória de formulário e fixação de data
-if "data_fixada_memoria" not in st.session_state: st.session_state.data_fixada_memoria = datetime.now().date()
-if "usar_data_fixada" not in st.session_state: st.session_state.usar_data_fixada = False
+# Memória de formulário e fixação de data POR MÓDULO
+if "data_fixada_modulo" not in st.session_state: st.session_state.data_fixada_modulo = {}
+if "usar_data_fixada_modulo" not in st.session_state: st.session_state.usar_data_fixada_modulo = {}
+
 if "versao_formulario" not in st.session_state: st.session_state.versao_formulario = 0
 if "usuario_bancas" not in st.session_state: st.session_state.usuario_bancas = None 
 
@@ -204,18 +204,27 @@ def tela_coordenacao():
                 fase_cadastro = st.radio("2. Em qual fase do semestre estamos?", ["📍 Início do Semestre (Apenas Grupo e Orientador)", "🎓 Final do Semestre (Agendamento Completo)"], horizontal=True)
                 is_completo = "Final" in fase_cadastro
                 
+                # INICIALIZA A MEMÓRIA DE DATA APENAS PARA O MÓDULO SELECIONADO
+                if modulo_selecionado not in st.session_state.usar_data_fixada_modulo:
+                    st.session_state.usar_data_fixada_modulo[modulo_selecionado] = False
+                if modulo_selecionado not in st.session_state.data_fixada_modulo:
+                    st.session_state.data_fixada_modulo[modulo_selecionado] = datetime.now().date()
+                
                 col_fix1, col_fix2 = st.columns([1, 3])
                 with col_fix1:
-                    fixar_data = st.checkbox("Fixar Data?", value=st.session_state.usar_data_fixada)
-                    st.session_state.usar_data_fixada = fixar_data
+                    fixar_data = st.checkbox(f"Fixar Data p/ {modulo_selecionado}?", value=st.session_state.usar_data_fixada_modulo[modulo_selecionado])
+                    st.session_state.usar_data_fixada_modulo[modulo_selecionado] = fixar_data
                 with col_fix2:
                     if fixar_data:
-                        data_escolhida = st.date_input("Escolha a Data Padrão para Fixar:", value=st.session_state.data_fixada_memoria, format="DD/MM/YYYY")
-                        st.session_state.data_fixada_memoria = data_escolhida
+                        data_escolhida = st.date_input("Escolha a Data Padrão para Fixar:", value=st.session_state.data_fixada_modulo[modulo_selecionado], format="DD/MM/YYYY")
+                        st.session_state.data_fixada_modulo[modulo_selecionado] = data_escolhida
                 
                 with st.form(key=f"form_cadastro_v_{st.session_state.versao_formulario}", clear_on_submit=False):
-                    if fixar_data: data_banca = st.date_input("Data da Defesa:", value=st.session_state.data_fixada_memoria, format="DD/MM/YYYY", disabled=True)
-                    else: data_banca = st.date_input("Data da Defesa:", format="DD/MM/YYYY")
+                    
+                    if fixar_data:
+                        data_banca = st.date_input("Data da Defesa:", value=st.session_state.data_fixada_modulo[modulo_selecionado], format="DD/MM/YYYY", disabled=True)
+                    else:
+                        data_banca = st.date_input("Data da Defesa:", format="DD/MM/YYYY")
                     
                     formato_piepe, horario_banca, sala_banca = None, None, "A definir"
                     titulo, b1_nome, b1_email, b2_nome, b2_email, bs_nome, bs_email = "", "", "", "", "", "", ""
@@ -258,7 +267,7 @@ def tela_coordenacao():
 
                         if modulo_selecionado in ["TCC II", "MCM V"]:
                             col_bsn, col_bse = st.columns(2)
-                            with col_bsn: bs_nome = st.text_input("Nome Efetivo Suplente:")
+                            with col_bsn: bs_nome = st.text_input("Nome Efetivo Suplente (Obrigatório):")
                             with col_bse: bs_email = st.text_input("E-mail Avaliador Suplente (Obrigatório):").lower().strip()
                         elif modulo_selecionado == "PIEPE":
                             col_bsn, col_bse = st.columns(2)
@@ -395,14 +404,15 @@ def tela_coordenacao():
                     </div>
                     """, unsafe_allow_html=True)
                     
+                    # CORREÇÃO DO NOME DAS COLUNAS DOS BOTÕES
                     col_b1, col_b2, col_b3 = st.columns([2, 2, 2])
                     with col_b1:
                         if st.button("✏️ Editar / Agendar", key=f"btn_{edit_key}", use_container_width=True):
                             st.session_state[edit_key] = not st.session_state[edit_key]; st.rerun()
-                    with col_btn2:
+                    with col_b2:
                         if st.button("🗑️ Excluir", key=f"del_{banca['id']}", use_container_width=True):
                             st.session_state.bancos_avaliacoes.pop(indice_real); st.rerun()
-                    with col_btn3:
+                    with col_b3:
                         novo_mod = "TCC II" if banca['modulo'] == "TCC I" else "MCM V" if banca['modulo'] == "MCM IV" else banca['modulo']
                         if novo_mod != banca['modulo']:
                             if st.button(f"🔄 Migrar p/ {novo_mod}", key=f"mig_{banca['id']}", use_container_width=True):
@@ -493,7 +503,7 @@ def tela_coordenacao():
                                     st.session_state[edit_key] = False; st.toast("🔄 Atualizado!"); forçar_recarregamento_tela()
 
 # ==========================================
-# PAINEL DO PROFESSOR
+# PAINEL DO PROFESSOR (AUTONOMIA FILTRADA)
 # ==========================================
 def tela_professor():
     col_titulo, col_logout = st.columns([4, 1])
@@ -566,8 +576,6 @@ def tela_professor():
                                         st.toast("Banca agendada com sucesso!"); forçar_recarregamento_tela()
                     else:
                         st.info("⏳ Período de agendamento de bancas fechado pela coordenação.")
-                elif banca['status'] == "Aguardando Avaliação":
-                    st.success("✅ Banca Agendada. Módulo de notas em construção.")
 
 # ROTEADOR
 if st.session_state.usuario_bancas is None: tela_login()
