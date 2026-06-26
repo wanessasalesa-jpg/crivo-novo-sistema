@@ -29,6 +29,17 @@ def forçar_recarregamento_tela():
     try: st.rerun()
     except AttributeError: st.experimental_rerun()
 
+# NOVO SISTEMA DE MENSAGEM DE SUCESSO (Não é engolido pelo recarregamento)
+def recarregar_com_sucesso(mensagem):
+    st.session_state.msg_sucesso_pendente = mensagem
+    forçar_recarregamento_tela()
+
+def exibir_sucesso_pendente():
+    if st.session_state.get("msg_sucesso_pendente"):
+        st.success(st.session_state.msg_sucesso_pendente)
+        st.toast(st.session_state.msg_sucesso_pendente, icon="✅")
+        st.session_state.msg_sucesso_pendente = ""
+
 def obter_classe_cor(modulo):
     cores = {"TCC I": "badge-tcci", "TCC II": "badge-tccii", "MCM IV": "badge-mcmiv", "MCM V": "badge-mcmv", "PIEPE": "badge-piepe"}
     return cores.get(modulo, "badge-piepe")
@@ -92,18 +103,20 @@ if "permissoes_acesso" not in st.session_state:
         "ana.rosas@afya.com.br": {"perfil": "Professor", "modulos": []}
     }
 
+# VACINA DE MEMÓRIA (Verifica chave a chave profundamente para evitar KeyErrors)
 if "configuracoes" not in st.session_state: st.session_state.configuracoes = {}
 if "agendamento_aberto" not in st.session_state.configuracoes: st.session_state.configuracoes["agendamento_aberto"] = False
-if "disponibilidade_por_modulo" not in st.session_state.configuracoes:
-    st.session_state.configuracoes["disponibilidade_por_modulo"] = {
-        mod: {
-            "salas": lista_salas_base.copy(), 
-            "horarios": [t.strftime('%H:%M') for t in lista_horarios_base],
-            "janela_notas_inicio": datetime.now().date(),
-            "janela_notas_fim": datetime.now().date() + timedelta(days=30)
-        } 
-        for mod in ["TCC I", "TCC II", "MCM IV", "MCM V", "PIEPE"]
-    }
+if "disponibilidade_por_modulo" not in st.session_state.configuracoes: st.session_state.configuracoes["disponibilidade_por_modulo"] = {}
+
+for mod in ["TCC I", "TCC II", "MCM IV", "MCM V", "PIEPE"]:
+    if mod not in st.session_state.configuracoes["disponibilidade_por_modulo"]:
+        st.session_state.configuracoes["disponibilidade_por_modulo"][mod] = {}
+    
+    config_mod = st.session_state.configuracoes["disponibilidade_por_modulo"][mod]
+    if "salas" not in config_mod: config_mod["salas"] = lista_salas_base.copy()
+    if "horarios" not in config_mod: config_mod["horarios"] = [t.strftime('%H:%M') for t in lista_horarios_base]
+    if "janela_notas_inicio" not in config_mod: config_mod["janela_notas_inicio"] = datetime.now().date()
+    if "janela_notas_fim" not in config_mod: config_mod["janela_notas_fim"] = datetime.now().date() + timedelta(days=30)
 
 if "data_fixada_modulo" not in st.session_state: st.session_state.data_fixada_modulo = {}
 if "usar_data_fixada_modulo" not in st.session_state: st.session_state.usar_data_fixada_modulo = {}
@@ -114,6 +127,7 @@ if "usuario_bancas" not in st.session_state: st.session_state.usuario_bancas = N
 # MÓDULO DE LOGIN
 # ==========================================
 def tela_login():
+    exibir_sucesso_pendente()
     st.markdown("<h2 class='titulo-principal'>🎓 Portal de Bancas e Avaliações</h2>", unsafe_allow_html=True)
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -164,6 +178,7 @@ def tela_login():
 # PAINEL 0: ADMINISTRAÇÃO 
 # ==========================================
 def tela_administracao():
+    exibir_sucesso_pendente()
     col_titulo, col_logout = st.columns([4, 1])
     with col_titulo: st.markdown(f"### 👑 Painel de Administração Master | Olá, {st.session_state.usuario_bancas['nome']}")
     with col_logout:
@@ -179,7 +194,7 @@ def tela_administracao():
                 elif not modulos_delegados: st.error("Selecione um módulo.")
                 else:
                     st.session_state.permissoes_acesso[novo_email_coord] = {"perfil": "Coordenação", "modulos": modulos_delegados}
-                    st.toast(f"Acesso concedido!", icon="✅"); forçar_recarregamento_tela()
+                    recarregar_com_sucesso(f"Acesso concedido para {novo_email_coord}!")
                 
     st.markdown("#### Coordenadores Cadastrados")
     for email, dados in list(st.session_state.permissoes_acesso.items()):
@@ -190,22 +205,25 @@ def tela_administracao():
                 col1, col2, col3 = st.columns([2, 2, 6])
                 with col1:
                     if st.button("💾 Salvar Módulos", key=f"save_{email}", use_container_width=True):
-                        st.session_state.permissoes_acesso[email]["modulos"] = novos_mods; st.toast("Atualizado!", icon="✅")
+                        st.session_state.permissoes_acesso[email]["modulos"] = novos_mods
+                        recarregar_com_sucesso("Módulos atualizados com sucesso!")
                 with col2:
                     if st.button("🗑️ Revogar", key=f"del_{email}", use_container_width=True):
-                        del st.session_state.permissoes_acesso[email]; forçar_recarregamento_tela()
+                        del st.session_state.permissoes_acesso[email]
+                        recarregar_com_sucesso("Acesso revogado com sucesso!")
 
 # ==========================================
 # PAINEL 1: COORDENAÇÃO 
 # ==========================================
 def tela_coordenacao():
+    exibir_sucesso_pendente()
     col_titulo, col_logout = st.columns([4, 1])
     with col_titulo: st.markdown(f"### ⚙️ Painel da Coordenação | Olá, {st.session_state.usuario_bancas['nome']}")
     with col_logout:
         if st.button("Sair (Logout)"):
             st.session_state.usuario_bancas = None; forçar_recarregamento_tela()
             
-    aba_criar, aba_gerenciar, aba_monitoramento = st.tabs(["➕ Cadastrar", "📋 Gestão e Edição", "📊 Monitoramento de Grupos"])
+    aba_criar, aba_gerenciar, aba_monitoramento = st.tabs(["➕ Cadastrar Grupos", "📋 Gestão e Edição", "📊 Monitoramento de Grupos"])
     
     with aba_criar:
         modulos_permitidos = st.session_state.usuario_bancas["modulos"]
@@ -297,7 +315,7 @@ def tela_coordenacao():
                         precisa_sup = modulo_selecionado in ["TCC II", "MCM V"]
 
                         if not o_nome or not o_email or not lista_alunos: st.error("Orientador e Alunos são obrigatórios.")
-                        elif co_email and not co_nome: st.error("Preencha o Nome do Co-orientador.")
+                        elif co_email and not co_nome: st.error("Preencha o Nome do Co-orientador (ou apague o e-mail se não houver).")
                         elif not ori_valido or not co_valido: st.error("Domínio de e-mail da orientação inválido.")
                         else:
                             erro_banca = False
@@ -334,8 +352,7 @@ def tela_coordenacao():
                                     if bs_email: liberar_acesso_professor(bs_email, "Professor")
                                 
                                 st.session_state.versao_formulario += 1
-                                st.toast("✅ Cadastrado com sucesso!", icon="🎉")
-                                forçar_recarregamento_tela()
+                                recarregar_com_sucesso("✅ Grupo/Banca cadastrado com sucesso!")
 
 # ==========================================
 # ABA GESTÃO 
@@ -437,14 +454,14 @@ def tela_coordenacao():
                             st.session_state[edit_key] = not st.session_state[edit_key]; st.rerun()
                     with col_b2:
                         if st.button("🗑️ Excluir", key=f"del_{banca['id']}", use_container_width=True):
-                            st.session_state.bancos_avaliacoes.pop(indice_real); st.rerun()
+                            st.session_state.bancos_avaliacoes.pop(indice_real); recarregar_com_sucesso("Banca excluída com sucesso.")
                     with col_b3:
                         novo_mod = "TCC II" if banca['modulo'] == "TCC I" else "MCM V" if banca['modulo'] == "MCM IV" else banca['modulo']
                         if novo_mod != banca['modulo']:
                             if st.button(f"🔄 Migrar p/ {novo_mod}", key=f"mig_{banca['id']}", use_container_width=True):
                                 b_copy = banca.copy()
                                 b_copy.update({"id": str(uuid.uuid4())[:8], "modulo": novo_mod, "semestre": lista_semestres[-1], "status": "Em Orientação", "titulo": "", "avaliador_1_email": "", "avaliador_1_nome": "", "avaliador_2_email": "", "avaliador_2_nome": "", "avaliador_sup_email": "", "avaliador_sup_nome": "", "horario": "N/A", "sala": "A definir", "atas_mensais": {"Mês 1": False, "Mês 2": False, "Mês 3": False, "Mês 4": False}, "notas_lancadas": {"Orientador": False, "Titular 1": False, "Titular 2": False}, "ata_assinada": False})
-                                st.session_state.bancos_avaliacoes.append(b_copy); st.toast("Clonado com sucesso!"); st.rerun()
+                                st.session_state.bancos_avaliacoes.append(b_copy); recarregar_com_sucesso(f"Grupo migrado para {novo_mod} com sucesso!")
                     
                     if st.session_state[edit_key]:
                         st.markdown("---")
@@ -532,7 +549,7 @@ def tela_coordenacao():
                                     if edit_b2_email: liberar_acesso_professor(edit_b2_email, "Professor")
                                     if edit_bs_email: liberar_acesso_professor(edit_bs_email, "Professor")
                                     
-                                    st.session_state[edit_key] = False; st.toast("🔄 Atualizado!"); forçar_recarregamento_tela()
+                                    st.session_state[edit_key] = False; recarregar_com_sucesso("Banca atualizada com sucesso!")
 
 # ==========================================
 # ABA 3: MONITORAMENTO DE GRUPOS
@@ -582,6 +599,7 @@ def tela_coordenacao():
 # PAINEL DO PROFESSOR 
 # ==========================================
 def tela_professor():
+    exibir_sucesso_pendente()
     col_titulo, col_logout = st.columns([4, 1])
     with col_titulo: st.markdown(f"### 📚 Painel do Professor | Olá, {st.session_state.usuario_bancas['nome']}")
     with col_logout:
