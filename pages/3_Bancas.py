@@ -85,13 +85,23 @@ if "bancos_avaliacoes" not in st.session_state:
             "atas_mensais": {"Mês 1": True, "Mês 2": True, "Mês 3": True, "Mês 4": False},
             "notas_lancadas": {"Orientador": 9.5, "Avaliador 1": None, "Avaliador 2": 8.0, "Suplente": 9.0},
             "ata_assinada": True
+        },
+        {
+            "id": "mcm4-demo", "modulo": "MCM IV", "semestre": "2026.1", "formato_piepe": None,
+            "data": "A definir", "horario": "N/A", "sala": "A definir", "titulo": "Análise da Cobertura Vacinal de BCG em Regiões de Fronteira",
+            "orientador_email": "ana.rosas@afya.com.br", "orientador_nome": "Ana Beatriz de Sá Rosas",
+            "coorientador_email": "", "coorientador_nome": "",
+            "avaliador_1_email": "", "avaliador_1_nome": "", "avaliador_2_email": "", "avaliador_2_nome": "", "avaliador_sup_email": "", "avaliador_sup_nome": "",
+            "alunos": ["Luana Santos de Sousa", "Marcia Izabella Alves Miranda"], "status": "Em Orientação",
+            "atas_mensais": {"Mês 1": True, "Mês 2": False, "Mês 3": False, "Mês 4": False},
+            "notas_lancadas": {"Orientador": None, "Avaliador 1": None, "Avaliador 2": None, "Suplente": None},
+            "ata_assinada": False
         }
     ]
 
 if "permissoes_acesso" not in st.session_state:
     st.session_state.permissoes_acesso = {"brunna.costa@afya.com.br": {"perfil": "Professor", "modulos": []}}
 
-# Vacina de Memória Profunda
 if "configuracoes" not in st.session_state or not isinstance(st.session_state.configuracoes, dict): 
     st.session_state.configuracoes = {}
 if "agendamento_aberto" not in st.session_state.configuracoes: 
@@ -418,7 +428,7 @@ def tela_coordenacao():
                             max_len = max([len(str(x)) for x in df_export[col].values] + [len(str(col))]) + 2
                             col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
                             worksheet.column_dimensions[col_letter].width = min(max_len, 35)
-                    st.download_button("📥 Baixar Excel (.xlsx)", data=buffer.getvalue(), file_name=f"Bancas_{filtro_gestao_mod}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                    st.download_button("📥 Baixar Excel (.xlsx)", data=buffer.getvalue(), file_name=f"Bancas_Gestao.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
             st.markdown("---")
             for banca in reversed(bancas_filtradas_gestao):
@@ -588,8 +598,12 @@ def tela_coordenacao():
                 atas = banca.get("atas_mensais", {"Mês 1": None, "Mês 2": None, "Mês 3": None, "Mês 4": None})
                 notas = banca.get("notas_lancadas", {"Orientador": None, "Avaliador 1": None, "Avaliador 2": None, "Suplente": None})
                 
-                # Média Dinâmica das notas inseridas
-                notas_validas = [v for k, v in notas.items() if isinstance(v, (int, float))]
+                # Média Dinâmica IGNORANDO Orientador em MCM V e PIEPE
+                notas_validas = []
+                for k, v in notas.items():
+                    if isinstance(v, (int, float)):
+                        if k == "Orientador" and banca['modulo'] in ["MCM V", "PIEPE"]: continue
+                        notas_validas.append(v)
                 media = sum(notas_validas)/len(notas_validas) if notas_validas else None
                 
                 with st.container(border=True):
@@ -616,26 +630,28 @@ def tela_coordenacao():
                             st.markdown(txt_ata("Mês 4"), unsafe_allow_html=True)
                             if atas["Mês 4"]: st.download_button("📥 Baixar PDF", "Mock PDF Ata", file_name=f"Ata_M4_{banca['id']}.pdf", key=f"d_a4_{banca['id']}")
                     
-                    st.markdown("---")
-                    st.write("**Lançamento de Notas (Banca e Orientador):**")
-                    col_n1, col_n2, col_n3, col_n4 = st.columns(4)
-                    
-                    def txt_n(k): return f"<div class='{'ata-ok' if notas[k] is not None else 'ata-pendente'}'>{k}: {'✅ ('+str(notas[k])+')' if notas[k] is not None else '❌'}</div>"
-                    
-                    with col_n1: st.markdown(txt_n("Orientador") if banca['modulo'] != "PIEPE" else "", unsafe_allow_html=True)
-                    with col_n2: st.markdown(txt_n("Avaliador 1"), unsafe_allow_html=True)
-                    with col_n3: st.markdown(txt_n("Avaliador 2"), unsafe_allow_html=True)
-                    with col_n4: st.markdown(txt_n("Suplente") if banca.get("avaliador_sup_email") else "", unsafe_allow_html=True)
-                    
-                    st.markdown(f"<div style='text-align: right; margin-top:10px;'><span class='media-final'>Média Final do Grupo: {f'{media:.1f}' if media else 'Pendente'}</span></div>", unsafe_allow_html=True)
-                    
-                    if banca['modulo'] in ["TCC I", "TCC II", "MCM IV", "MCM V"]:
+                    if banca['status'] == "Aguardando Avaliação" or banca['modulo'] in ["TCC I", "TCC II", "MCM V", "PIEPE"]:
                         st.markdown("---")
-                        status_ata = "✅ Documento Assinado" if banca.get("ata_assinada") else "❌ Aguardando Assinaturas na Ata de Defesa"
-                        col_at1, col_at2 = st.columns([3,1])
-                        with col_at1: st.markdown(f"<span style='font-size:14px; font-weight:bold;'>Status Oficial: {status_ata}</span>", unsafe_allow_html=True)
-                        with col_at2: 
-                            if banca.get("ata_assinada"): st.download_button("📥 Baixar Ata de Defesa (PDF)", "Mock Ata Defesa", file_name=f"Ata_Defesa_{banca['id']}.pdf", use_container_width=True)
+                        st.write("**Lançamento de Notas:**")
+                        col_n1, col_n2, col_n3, col_n4 = st.columns(4)
+                        
+                        def txt_n(k): return f"<div class='{'ata-ok' if notas[k] is not None else 'ata-pendente'}'>{k}: {'✅ ('+str(notas[k])+')' if notas[k] is not None else '❌'}</div>"
+                        
+                        if banca['modulo'] not in ["MCM V", "PIEPE"]:
+                            with col_n1: st.markdown(txt_n("Orientador"), unsafe_allow_html=True)
+                        with col_n2: st.markdown(txt_n("Avaliador 1"), unsafe_allow_html=True)
+                        with col_n3: st.markdown(txt_n("Avaliador 2"), unsafe_allow_html=True)
+                        with col_n4: st.markdown(txt_n("Suplente") if banca.get("avaliador_sup_email") else "", unsafe_allow_html=True)
+                        
+                        st.markdown(f"<div style='text-align: right; margin-top:10px;'><span class='media-final'>Média Final do Grupo: {f'{media:.1f}' if media else 'Pendente'}</span></div>", unsafe_allow_html=True)
+                        
+                        if banca['modulo'] in ["TCC I", "TCC II", "MCM IV", "MCM V"]:
+                            st.markdown("---")
+                            status_ata = "✅ Documento Assinado" if banca.get("ata_assinada") else "❌ Aguardando Assinaturas na Ata de Defesa"
+                            col_at1, col_at2 = st.columns([3,1])
+                            with col_at1: st.markdown(f"<span style='font-size:14px; font-weight:bold;'>Status Oficial: {status_ata}</span>", unsafe_allow_html=True)
+                            with col_at2: 
+                                if banca.get("ata_assinada"): st.download_button("📥 Baixar Ata de Defesa", "Mock Ata Defesa", file_name=f"Ata_Defesa_{banca['id']}.pdf", use_container_width=True)
 
     # ------------------ ABA 4: DIÁRIO DE NOTAS (ORDEM ALFABÉTICA) ------------------
     with aba_diario:
@@ -649,7 +665,12 @@ def tela_coordenacao():
         lista_alunos_notas = []
         for b in bancas_diario:
             notas = b.get("notas_lancadas", {})
-            notas_validas = [v for k, v in notas.items() if isinstance(v, (int, float))]
+            notas_validas = []
+            for k, v in notas.items():
+                if isinstance(v, (int, float)):
+                    if k == "Orientador" and b['modulo'] in ["MCM V", "PIEPE"]: continue
+                    notas_validas.append(v)
+                    
             media_calc = sum(notas_validas)/len(notas_validas) if notas_validas else None
             media_str = f"{media_calc:.1f}" if media_calc else "Pendente"
 
@@ -658,13 +679,13 @@ def tela_coordenacao():
                     "Aluno (Ordem Alfabética)": aluno,
                     "Média Final": media_str,
                     "Módulo": b["modulo"],
-                    "Semestre": b.get("semestre", "N/A"),
-                    "Grupo/Projeto": b.get("titulo", "Sem título")
+                    "Semestre": b.get("semestre", "N/A")
                 })
         
         if lista_alunos_notas:
             df_notas = pd.DataFrame(lista_alunos_notas)
             df_notas = df_notas.sort_values(by="Aluno (Ordem Alfabética)").reset_index(drop=True)
+            df_notas.index = range(1, len(df_notas) + 1) # Começa no 1
             st.dataframe(df_notas, use_container_width=True)
             
             buffer_notas = io.BytesIO()
