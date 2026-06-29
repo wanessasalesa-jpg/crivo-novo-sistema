@@ -802,3 +802,46 @@ if st.session_state.usuario_bancas is None: tela_login()
 elif st.session_state.usuario_bancas["perfil"] == "Administrador": tela_administracao()
 elif st.session_state.usuario_bancas["perfil"] == "Coordenação": tela_coordenacao()
 elif st.session_state.usuario_bancas["perfil"] == "Professor": tela_professor()
+    def tela_professor():
+    exibir_sucesso_pendente()
+    col_titulo, col_logout = st.columns([4, 1])
+    with col_titulo: st.markdown(f"### 📚 Portal do Docente | {st.session_state.usuario_bancas['nome']}")
+    with col_logout:
+        if st.button("Sair"): st.session_state.usuario_bancas = None; forçar_recarregamento_tela()
+            
+    meu_email = st.session_state.usuario_bancas['email']
+    
+    # SEPARAÇÃO DE PAPÉIS
+    orientacoes = [b for b in st.session_state.bancos_avaliacoes if meu_email in [b.get('orientador_email'), b.get('coorientador_email')]]
+    bancas = [b for b in st.session_state.bancos_avaliacoes if meu_email in [b.get('avaliador_1_email'), b.get('avaliador_2_email'), b.get('avaliador_sup_email')]]
+    
+    aba_ori, aba_ban = st.tabs(["🎓 Meus Grupos (Orientação)", "⚖️ Bancas Examinadoras"])
+    
+    with aba_ori:
+        if not orientacoes: st.info("Nenhum grupo sob sua orientação no momento.")
+        for banca in orientacoes:
+            with st.container(border=True):
+                st.write(f"**{banca['modulo']}** - {banca.get('titulo', 'Projeto sem título')}")
+                # BOTÃO DE ATA MENSAL (BASEADO NO SEU MODELO)
+                if st.button(f"📝 Preencher/Visualizar Ata Mensal", key=f"ata_{banca['id']}"):
+                    st.warning("Aqui abrirá o seu formulário de Ata Mensal para este grupo.")
+                # LANÇAMENTO DE NOTA (ORIENTADOR)
+                st.write("---")
+                nota_ori = st.number_input(f"Nota Orientador (0-100):", 0, 100, value=banca['notas_lancadas'].get('Orientador', 0) if banca['notas_lancadas'].get('Orientador') else 0)
+                if st.button("Salvar Nota Orientador", key=f"save_n_{banca['id']}"):
+                    banca['notas_lancadas']['Orientador'] = nota_ori
+                    recarregar_com_sucesso("Nota salva!")
+
+    with aba_ban:
+        if not bancas: st.info("Você não faz parte de nenhuma banca examinadora ativa.")
+        for banca in bancas:
+            with st.container(border=True):
+                st.write(f"**{banca['modulo']}** - {banca.get('titulo', 'Projeto sem título')}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    n1 = st.number_input("Nota Parte Escrita (0-100):", 0, 100, key=f"n1_{banca['id']}")
+                with col2:
+                    n2 = st.number_input("Nota Apresentação (0-100):", 0, 100, key=f"n2_{banca['id']}")
+                if st.button("Lançar Notas da Banca", key=f"btn_n_{banca['id']}"):
+                    banca['notas_lancadas']['Avaliador 1'] = (n1 + n2) / 2 # Exemplo de composição
+                    recarregar_com_sucesso("Notas de banca registradas!")
