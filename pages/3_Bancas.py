@@ -77,7 +77,7 @@ def calcular_media_final(banca):
         if nota_ori is not None and notas_banca:
             return nota_ori + media_banca
         return None
-    else: # MCM V e PIEPE
+    else:
         if notas_banca:
             return media_banca
         return None
@@ -87,7 +87,7 @@ lista_horarios_base = [time(h, 0) for h in range(8, 22)]
 lista_salas_base = [f"APG {i:02d}" for i in range(1, 13)]
 lista_semestres = ["2025.2", "2026.1", "2026.2", "2027.1", "2027.2", "2028.1", "2028.2"]
 
-# 4. PRESERVAÇÃO INTEGRAL DE DADOS JÁ CADASTRADOS (Blindagem de Cache)
+# 4. INICIALIZAÇÃO DA MEMÓRIA
 if "bancos_avaliacoes" not in st.session_state:
     st.session_state.bancos_avaliacoes = [
         {
@@ -140,7 +140,87 @@ if "versao_formulario" not in st.session_state: st.session_state.versao_formular
 if "usuario_bancas" not in st.session_state: st.session_state.usuario_bancas = None 
 
 # ==========================================
-# ROTEADOR COORDENAÇÃO (MENU COM LÓGICA HORIZONTAL)
+# PAINEL 0: LOGIN E ADMINISTRAÇÃO 
+# ==========================================
+def tela_login():
+    exibir_sucesso_pendente()
+    st.markdown("<h2 class='titulo-principal'>🎓 Portal de Bancas e Avaliações</h2>", unsafe_allow_html=True)
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("form_login", clear_on_submit=False):
+            st.write("**1. Escolha o seu Perfil de Acesso:**")
+            tipo_acesso = st.radio("Perfil:", ["👑 Administrador (Gestão)", "⚙️ Coordenação (Gestão de Bancas)", "📚 Professor (Avaliador/Orientador)"], label_visibility="collapsed")
+            st.write("**2. Insira suas credenciais:**")
+            email = st.text_input("E-mail Institucional:").lower().strip()
+            senha = st.text_input("Senha:", type="password")
+            submit = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+            
+            if submit:
+                if senha != "afya2026": st.error("Senha incorreta.")
+                else:
+                    if "Administrador" in tipo_acesso:
+                        if email in ADMIN_EMAILS:
+                            st.session_state.usuario_bancas = {"perfil": "Administrador", "email": email, "nome": formatar_nome_email(email), "modulos": []}
+                            forçar_recarregamento_tela()
+                        else: st.error("E-mail não possui privilégios de Administrador.")
+                    elif "Coordenação" in tipo_acesso:
+                        dados = st.session_state.permissoes_acesso.get(email)
+                        if dados and dados.get("perfil") == "Coordenação":
+                            st.session_state.usuario_bancas = {"perfil": "Coordenação", "email": email, "nome": formatar_nome_email(email), "modulos": dados.get("modulos", [])}
+                            forçar_recarregamento_tela()
+                        else: st.error("E-mail não cadastrado como Coordenação.")
+                    elif "Professor" in tipo_acesso:
+                        is_prof = False; nome_encontrado = formatar_nome_email(email)
+                        for b in st.session_state.bancos_avaliacoes:
+                            emails = [b.get("orientador_email"), b.get("coorientador_email"), b.get("avaliador_1_email"), b.get("avaliador_2_email"), b.get("avaliador_sup_email")]
+                            if email in emails:
+                                is_prof = True
+                                if email == b.get("orientador_email"): nome_encontrado = b.get("orientador_nome")
+                                elif email == b.get("coorientador_email"): nome_encontrado = b.get("coorientador_nome")
+                                elif email == b.get("avaliador_1_email"): nome_encontrado = b.get("avaliador_1_nome")
+                                elif email == b.get("avaliador_2_email"): nome_encontrado = b.get("avaliador_2_nome")
+                                elif email == b.get("avaliador_sup_email"): nome_encontrado = b.get("avaliador_sup_nome")
+                                break
+                        if is_prof or email in st.session_state.permissoes_acesso:
+                            st.session_state.usuario_bancas = {"perfil": "Professor", "email": email, "nome": nome_encontrado}
+                            forçar_recarregamento_tela()
+                        else: st.error("E-mail não cadastrado na base ou sem grupos ativos.")
+
+def tela_administracao():
+    exibir_sucesso_pendente()
+    col_titulo, col_logout = st.columns([4, 1])
+    with col_titulo: st.markdown(f"### 👑 Painel de Administração Master | Olá, {st.session_state.usuario_bancas['nome']}")
+    with col_logout:
+        if st.button("Sair (Logout)"): st.session_state.usuario_bancas = None; forçar_recarregamento_tela()
+            
+    with st.expander("➕ Adicionar Novo Coordenador", expanded=True):
+        with st.form("form_add_coord", clear_on_submit=False):
+            novo_email_coord = st.text_input("E-mail da Coordenação (@afya.com.br):").lower().strip()
+            modulos_delegados = st.multiselect("Módulos sob responsabilidade:", ["TCC I", "TCC II", "MCM IV", "MCM V", "PIEPE"])
+            if st.form_submit_button("Conceder Acesso"):
+                if not novo_email_coord.endswith("@afya.com.br") and not novo_email_coord.endswith("@yahoo.com.br"): st.error("E-mail inválido.")
+                elif not modulos_delegados: st.error("Selecione um módulo.")
+                else:
+                    st.session_state.permissoes_acesso[novo_email_coord] = {"perfil": "Coordenação", "modulos": modulos_delegados}
+                    recarregar_com_sucesso(f"Acesso concedido para {novo_email_coord}!")
+                
+    st.markdown("#### Coordenações Cadastradas")
+    for email, dados in list(st.session_state.permissoes_acesso.items()):
+        if isinstance(dados, dict) and dados.get("perfil") == "Coordenação":
+            with st.container(border=True):
+                st.markdown(f"**👤 {formatar_nome_email(email)}** ({email})")
+                novos_mods = st.multiselect(f"Módulos autorizados:", ["TCC I", "TCC II", "MCM IV", "MCM V", "PIEPE"], default=dados.get("modulos", []), key=f"mod_{email}")
+                col1, col2, col3 = st.columns([2, 2, 6])
+                with col1:
+                    if st.button("💾 Salvar Módulos", key=f"save_{email}", use_container_width=True):
+                        st.session_state.permissoes_acesso[email]["modulos"] = novos_mods; recarregar_com_sucesso("Módulos atualizados!")
+                with col2:
+                    if st.button("🗑️ Revogar", key=f"del_{email}", use_container_width=True):
+                        del st.session_state.permissoes_acesso[email]; recarregar_com_sucesso("Acesso revogado!")
+
+# ==========================================
+# PAINEL 1: COORDENAÇÃO 
 # ==========================================
 def tela_coordenacao():
     exibir_sucesso_pendente()
@@ -249,11 +329,41 @@ def tela_coordenacao():
                 st.download_button("📥 Baixar Ata de Defesa (PDF)", "Mock Ata Defesa", key=f"d_def_{banca['id']}")
 
     elif aba_ativa == "📈 Diário de Notas":
-        st.info("Diário de Notas em Ordem Alfabética Restaurado.")
-        # Lógica idêntica ao Diário de Notas anterior preservada integralmente...
+        col_m1, col_m2 = st.columns(2)
+        with col_m1: filtro_mod_dia = st.selectbox("🔍 Módulo:", ["Todos"] + st.session_state.usuario_bancas["modulos"], key="dia_mod")
+        with col_m2: filtro_sem_dia = st.selectbox("📅 Semestre:", ["Todos"] + lista_semestres, key="dia_sem")
+        st.markdown("---")
+
+        bancas_diario = [b for b in st.session_state.bancos_avaliacoes if (filtro_mod_dia == "Todos" or b['modulo'] == filtro_mod_dia) and (filtro_sem_dia == "Todos" or b.get('semestre') == filtro_sem_dia)]
+        
+        lista_alunos_notas = []
+        for b in bancas_diario:
+            media_calc = calcular_media_final(b)
+            media_str = f"{media_calc:.1f}" if media_calc is not None else "Pendente"
+
+            for aluno in b.get("alunos", []):
+                lista_alunos_notas.append({"Aluno (Ordem Alfabética)": aluno, "Média Final": media_str, "Módulo": b["modulo"], "Semestre": b.get("semestre", "N/A")})
+        
+        if lista_alunos_notas:
+            df_notas = pd.DataFrame(lista_alunos_notas)
+            df_notas = df_notas.sort_values(by="Aluno (Ordem Alfabética)").reset_index(drop=True)
+            df_notas.index = range(1, len(df_notas) + 1)
+            st.dataframe(df_notas, use_container_width=True)
+            
+            buffer_notas = io.BytesIO()
+            with pd.ExcelWriter(buffer_notas, engine='openpyxl') as writer:
+                df_notas.to_excel(writer, index=False, sheet_name='Diario de Notas')
+                worksheet = writer.sheets['Diario de Notas']
+                for idx, col in enumerate(df_notas.columns):
+                    max_len = max([len(str(x)) for x in df_notas[col].values] + [len(str(col))]) + 2
+                    col_letter = chr(65 + idx)
+                    worksheet.column_dimensions[col_letter].width = min(max_len, 45)
+            st.download_button("📥 Baixar Diário de Notas (.xlsx)", data=buffer_notas.getvalue(), file_name=f"Diario_Notas_{filtro_mod_dia}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        else:
+            st.info("Nenhum aluno cadastrado nos filtros atuais.")
 
 # ==========================================
-# PAINEL DO PROFESSOR (SÍMBOLO NOVO E EXPANDER)
+# PAINEL DO PROFESSOR (CONCERTADO: BOTÕES DE ATA + HISTÓRICO DE RUBRICA)
 # ==========================================
 def tela_professor():
     exibir_sucesso_pendente()
@@ -270,7 +380,7 @@ def tela_professor():
     
     abas_nomes = []
     if eh_orientador: abas_nomes.append("🎓 Meus Grupos (Orientação)")
-    if eh_banca: abas_nomes.append("🎓 Bancas Pendentes") # SÍMBOLO ACADÊMICO ATUALIZADO
+    if eh_banca: abas_nomes.append("🎓 Bancas Pendentes")
     abas_nomes.append("🗂️ Histórico de Avaliações")
     
     aba_prof = st.radio("Navegação Prof:", abas_nomes, horizontal=True, label_visibility="collapsed")
@@ -279,27 +389,28 @@ def tela_professor():
     if aba_prof == "🎓 Meus Grupos (Orientação)":
         orientacoes = [b for b in st.session_state.bancos_avaliacoes if meu_email in [b.get('orientador_email'), b.get('coorientador_email')]]
         for banca in orientacoes:
+            indice_real = next((i for i, d in enumerate(st.session_state.bancos_avaliacoes) if d["id"] == banca["id"]), None)
             with st.container(border=True):
                 st.markdown(f"#### {banca['modulo']} - {banca.get('titulo', 'Projeto sem título')}")
                 st.markdown(f"<span style='color: #666;'><b>Status:</b> {banca['status']} | <b>Alunos:</b> {', '.join(banca.get('alunos', []))}</span>", unsafe_allow_html=True)
                 
-                # NOVO: ATAS ESCONDIDAS EM EXPANDER PARA NÃO ENCHER A TELA
                 with st.expander("📅 Ver Controle de Atas Mensais de Orientação"):
                     atas = banca.get("atas_mensais", {"Mês 1": False, "Mês 2": False, "Mês 3": False, "Mês 4": False})
-                    m1 = st.checkbox("Mês 1 Concluído", value=atas.get("Mês 1"), key=f"chk_m1_{banca['id']}")
-                    m2 = st.checkbox("Mês 2 Concluído", value=atas.get("Mês 2"), key=f"chk_m2_{banca['id']}")
-                    m3 = st.checkbox("Mês 3 Concluído", value=atas.get("Mês 3"), key=f"chk_m3_{banca['id']}")
-                    m4 = st.checkbox("Mês 4 Concluído", value=atas.get("Mês 4"), key=f"chk_m4_{banca['id']}")
-                    if st.button("💾 Salvar Atas", key=f"s_at_{banca['id']}"):
-                        indice_real = next((i for i, d in enumerate(st.session_state.bancos_avaliacoes) if d["id"] == banca["id"]), None)
-                        st.session_state.bancos_avaliacoes[indice_real]['atas_mensais'] = {"Mês 1": m1, "Mês 2": m2, "Mês 3": m3, "Mês 4": m4}
-                        recarregar_com_sucesso("Atas atualizadas!")
+                    
+                    for mes in ["Mês 1", "Mês 2", "Mês 3", "Mês 4"]:
+                        c1, c2 = st.columns([1, 2])
+                        with c1:
+                            novo_status = st.checkbox(f"{mes} Concluído", value=atas.get(mes, False), key=f"chk_{mes}_{banca['id']}")
+                            if novo_status != atas.get(mes, False):
+                                st.session_state.bancos_avaliacoes[indice_real]['atas_mensais'][mes] = novo_status
+                        with c2:
+                            if st.button(f"📝 Preencher Ata {mes}", key=f"btn_ata_{mes}_{banca['id']}"):
+                                st.warning(f"O formulário da Ata do {mes} abrirá aqui (Em desenvolvimento).")
 
                 if banca['modulo'] not in ["MCM V", "PIEPE"]:
                     max_nota = 40.0 if banca['modulo'] in ["TCC I", "TCC II"] else 70.0
                     nota_ori = st.number_input(f"Sua Nota de Orientação (0.0 a {max_nota}):", 0.0, float(max_nota), value=float(banca['notas_lancadas'].get('Orientador', 0) or 0), key=f"n_ori_{banca['id']}")
                     if st.button("Salvar Nota", key=f"s_no_{banca['id']}"):
-                        indice_real = next((i for i, d in enumerate(st.session_state.bancos_avaliacoes) if d["id"] == banca["id"]), None)
                         st.session_state.bancos_avaliacoes[indice_real]['notas_lancadas']['Orientador'] = nota_ori
                         recarregar_com_sucesso("Nota salva!")
         
@@ -316,7 +427,6 @@ def tela_professor():
                     st.markdown("<div class='zona-segura'>", unsafe_allow_html=True)
                     nota_final_calc = 0.0
                     
-                    # RUBRICAS CRITÉRIO POR CRITÉRIO DETALHADAS (MÓDULOS DE 30 E 60)
                     if banca['modulo'] in ["TCC I", "TCC II"]:
                         st.markdown("##### 📝 Rubricas Detalhadas da Banca (Máx 60 pontos)")
                         c1 = st.slider("1. Introdução, Referencial e Fundamentação (0 a 15):", 0.0, 15.0, 0.0, step=0.5, key=f"c1_{banca['id']}")
@@ -324,20 +434,20 @@ def tela_professor():
                         c3 = st.slider("3. Domínio Temático, Clareza e Arguição Oral (0 a 15):", 0.0, 15.0, 0.0, step=0.5, key=f"c3_{banca['id']}")
                         c4 = st.slider("4. Recursos Visuais, Postura e Uso do Tempo (0 a 15):", 0.0, 15.0, 0.0, step=0.5, key=f"c4_{banca['id']}")
                         nota_final_calc = c1 + c2 + c3 + c4
-                        notas_dit = {"Fundamentação": c1, "Metodologia": c2, "Arguição Oral": c3, "Tempo/Visual": c4, "Final": nota_final_calc}
+                        notas_dit = {"Fundamentação": c1, "Metodologia": c2, "Arguição Oral": c3, "Tempo/Visual": c4, "Total da Banca": nota_final_calc}
                         
                     elif banca['modulo'] == "MCM IV":
                         st.markdown("##### 📝 Rubricas Detalhadas da Banca (Máx 30 pontos)")
                         c1 = st.slider("1. Conteúdo Escrito e Estruturação Estrutural (0 a 15):", 0.0, 15.0, 0.0, step=0.5, key=f"c1_{banca['id']}")
                         c2 = st.slider("2. Desempenho Oral, Síntese e Arguição Clínica (0 a 15):", 0.0, 15.0, 0.0, step=0.5, key=f"c2_{banca['id']}")
                         nota_final_calc = c1 + c2
-                        notas_dit = {"Conteúdo Escrito": c1, "Defesa Oral": c2, "Final": nota_final_calc}
+                        notas_dit = {"Conteúdo Escrito": c1, "Defesa Oral": c2, "Total da Banca": nota_final_calc}
                         
-                    else: # MCM V e PIEPE (Escala Completa de 100)
+                    else: # MCM V e PIEPE
                         st.markdown("##### 📝 Rubrica Completa de Avaliação (Máx 100 pontos)")
                         n_un = st.slider("Nota Global Avaliação Clínica:", 0.0, 100.0, 0.0, step=0.5, key=f"cun_{banca['id']}")
                         nota_final_calc = n_un
-                        notas_dit = {"Nota Global": n_un, "Final": nota_final_calc}
+                        notas_dit = {"Nota Global": n_un, "Total da Banca": nota_final_calc}
                     
                     st.markdown(f"### 🧮 Total Somado: <span style='color:#800040;'>{nota_final_calc:.1f}</span>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
@@ -362,11 +472,22 @@ def tela_professor():
 
     elif aba_prof == "🗂️ Histórico de Avaliações":
         bancas_avaliadas = [b for b in st.session_state.bancos_avaliacoes if meu_email in b.get('avaliadores_concluidos', [])]
+        if not bancas_avaliadas:
+            st.info("Seu histórico de avaliações finalizadas aparecerá aqui.")
         for banca in bancas_avaliadas:
             with st.container(border=True):
                 st.write(f"✅ **{banca['modulo']}** - {banca.get('titulo')} | Alunos: {', '.join(banca['alunos'])}")
+                with st.expander("Ver Resumo da Rubrica Atribuída (Detalhado)"):
+                    minhas_notas = banca.get('notas_detalhadas', {}).get(meu_email, {})
+                    if not minhas_notas:
+                        st.write("Detalhes não encontrados.")
+                    for criterio, valor in minhas_notas.items():
+                        if "Total" in criterio: st.markdown(f"<br><b>{criterio}: {valor:.1f}</b>", unsafe_allow_html=True)
+                        else: st.write(f"🔹 {criterio}: {valor:.1f} pontos")
 
+# ==========================================
 # ROTEADOR DE TELAS
+# ==========================================
 if st.session_state.usuario_bancas is None: tela_login()
 elif st.session_state.usuario_bancas["perfil"] == "Administrador": tela_administracao()
 elif st.session_state.usuario_bancas["perfil"] == "Coordenação": tela_coordenacao()
