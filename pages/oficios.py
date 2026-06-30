@@ -1,13 +1,13 @@
+import os
 import streamlit as st
 import random
 import io
 import pandas as pd
 from datetime import datetime, timedelta
 
-# 1. CONFIGURAÇÃO DA PÁGINA
+# 1. CONFIGURAÇÃO DA PÁGINA E CSS
 st.set_page_config(page_title="Portal de Ofícios - CRIVO", page_icon="📄", layout="wide")
 
-# 2. DESIGN CUSTOMIZADO (CSS)
 st.markdown("""
     <style>
     .titulo-principal { color: #002147; font-family: 'Arial'; font-weight: bold; margin-bottom: 5px; }
@@ -59,9 +59,23 @@ with aba_solicitar:
     with col_ajuda:
         st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
         
-        # CÓDIGO ORIGINAL RESTAURADO (Com busca dupla para evitar erros de pasta)
-        try:
-            with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
+        # RADAR DE ARQUIVOS: Busca o arquivo em múltiplos caminhos possíveis
+        nome_arquivo = "Modelo de ofício - Afya (oficial).docx"
+        caminhos_possiveis = [
+            nome_arquivo,                                          # Na raiz
+            f"pages/{nome_arquivo}",                               # Dentro da pasta pages (se lido da raiz)
+            os.path.join(os.path.dirname(__file__), nome_arquivo), # Na pasta exata onde este script está
+            f"../{nome_arquivo}"                                   # Uma pasta acima
+        ]
+        
+        arquivo_encontrado = None
+        for caminho in caminhos_possiveis:
+            if os.path.exists(caminho):
+                arquivo_encontrado = caminho
+                break
+                
+        if arquivo_encontrado:
+            with open(arquivo_encontrado, "rb") as file:
                 st.download_button(
                     label="📄 Baixar Modelo Oficial (.DOCX)", 
                     data=file, 
@@ -69,18 +83,38 @@ with aba_solicitar:
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
                     use_container_width=True
                 )
-        except FileNotFoundError:
-            try:
-                with open("../Modelo de ofício - Afya (oficial).docx", "rb") as file:
-                    st.download_button(
-                        label="📄 Baixar Modelo Oficial (.DOCX)", 
-                        data=file, 
-                        file_name="Modelo de ofício - Afya (oficial).docx", 
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
-                        use_container_width=True
-                    )
-            except FileNotFoundError:
-                st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
+        else:
+            # Fallback de segurança caso o arquivo realmente não seja encontrado em lugar nenhum
+            texto_modelo_seguranca = """Ofício n° XXX/2026 AFYAMARABÁ/AFYA/COORD. DE CURSO
+Marabá/PA, XX de mês de 2026.
+
+A/Ao senhor/a (Colocar o pronome adequado)
+Nome da pessoa endereçada.
+Setor do/a responsável.
+Empresa/órgão destinado
+
+Assunto: Objetivo do oficio.
+
+Prezado (a) Senhor (a),
+
+Cumprimentando-o/a cordialmente, a Faculdade de Ciências Médica de Marabá – Afya Marabá, mantida pelo Instituto Paraense de Educação e Cultura LTDA – IPEC, inscrita no CNPJ sob o n° 07.962.437/0001-55, neste ato representado por Nome do Responsável, venho por meio de este documento ..... inserir texto.
+
+Diante do exposto, fique com os votos da mais elevada estima e consideração. 
+
+Cordialmente, 
+_____________________________
+Nome do Responsável
+Cargo do Responsável
+Faculdade de Ciências Médicas de Marabá – Afya Marabá"""
+            
+            st.warning("⚠️ Arquivo DOCX não encontrado no servidor. Baixe a versão em texto abaixo.")
+            st.download_button(
+                label="📄 Baixar Modelo Oficial (.TXT)", 
+                data=texto_modelo_seguranca.encode('utf-8'), 
+                file_name="Modelo_de_oficio_Afya.txt", 
+                mime="text/plain", 
+                use_container_width=True
+            )
 
     with col_form:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
