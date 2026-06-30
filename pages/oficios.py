@@ -1,4 +1,3 @@
-import os
 import streamlit as st
 import random
 import io
@@ -59,50 +58,17 @@ with aba_solicitar:
     
     with col_ajuda:
         st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
-        
-        caminho_arquivo = "Modelo de ofício - Afya (oficial).docx"
-        
-        # Lógica de fallback inteligente que não corrompe o arquivo
-        if os.path.exists(caminho_arquivo):
-            with open(caminho_arquivo, "rb") as file:
+        try:
+            with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
                 st.download_button(
                     label="📄 Baixar Modelo Oficial (.DOCX)", 
                     data=file, 
-                    file_name="Modelo_de_oficio_Afya.docx", 
+                    file_name="Modelo de ofício - Afya (oficial).docx", 
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
                     use_container_width=True
                 )
-        else:
-            texto_modelo_seguranca = """Ofício n° XXX/2026 AFYAMARABÁ/AFYA/COORD. DE CURSO
-Marabá/PA, XX de mês de 2026.
-
-A/Ao senhor/a (Colocar o pronome adequado)
-Nome da pessoa endereçada.
-Setor do/a responsável.
-Empresa/órgão destinado
-
-Assunto: Objetivo do oficio.
-
-Prezado (a) Senhor (a),
-
-Cumprimentando-o/a cordialmente, a Faculdade de Ciências Médica de Marabá – Afya Marabá, mantida pelo Instituto Paraense de Educação e Cultura LTDA – IPEC, inscrita no CNPJ sob o n° 07.962.437/0001-55, neste ato representado por Nome do Responsável, venho por meio de este documento ..... inserir texto.
-
-Diante do exposto, fique com os votos da mais elevada estima e consideração. 
-
-Cordialmente, 
-_____________________________
-Nome do Responsável
-Cargo do Responsável
-Faculdade de Ciências Médicas de Marabá – Afya Marabá"""
-            
-            st.warning("⚠️ O arquivo DOCX original não foi encontrado no sistema. Baixe a versão em texto abaixo.")
-            st.download_button(
-                label="📄 Baixar Modelo Oficial (.TXT)", 
-                data=texto_modelo_seguranca.encode('utf-8'), 
-                file_name="Modelo_de_oficio_Afya.txt", 
-                mime="text/plain", 
-                use_container_width=True
-            )
+        except FileNotFoundError:
+            st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
 
     with col_form:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
@@ -294,10 +260,7 @@ with aba_gestao:
             st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
             
         # LÓGICA DE ANOS FIXOS PARA O FILTRO
-        ano_atual = datetime.now().year
-        # Gera uma lista do ano atual+2 até 2024 (Ex: 2028, 2027, 2026, 2025, 2024)
-        anos_disponiveis = [str(ano) for ano in range(ano_atual + 2, 2023, -1)]
-        opcoes_ano = ["Todos os Anos"] + anos_disponiveis
+        opcoes_ano = ["Todos os Anos", "2028", "2027", "2026", "2025", "2024"]
         
         # INTERFACE DOS FILTROS LADO A LADO
         col_filtro1, col_filtro2 = st.columns(2)
@@ -316,7 +279,10 @@ with aba_gestao:
             lista_exibicao = [item for item in lista_exibicao if item['data_solicitacao'][6:10] == filtro_ano]
             
         if not lista_exibicao:
-            st.info(f"Nenhum ofício encontrado/emitido para o filtro selecionado ({filtro_ano}).")
+            if filtro_ano != "Todos os Anos":
+                st.info(f"Nenhum ofício emitido ou pendente para o ano de {filtro_ano}.")
+            else:
+                st.info("Nenhuma requisição encontrada para os filtros selecionados.")
         else:
             for item in reversed(lista_exibicao):
                 indice = st.session_state.banco_solicitacoes.index(item)
