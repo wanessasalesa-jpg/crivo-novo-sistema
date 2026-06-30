@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import random
 import io
@@ -58,20 +59,50 @@ with aba_solicitar:
     
     with col_ajuda:
         st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
-        # Lógica blindada para o botão NUNCA sumir
-        try:
-            with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
-                dados_modelo = file.read()
-        except FileNotFoundError:
-            dados_modelo = b"O arquivo oficial nao foi encontrado na pasta do servidor. Este e um arquivo de seguranca."
+        
+        caminho_arquivo = "Modelo de ofício - Afya (oficial).docx"
+        
+        # Lógica de fallback inteligente que não corrompe o arquivo
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "rb") as file:
+                st.download_button(
+                    label="📄 Baixar Modelo Oficial (.DOCX)", 
+                    data=file, 
+                    file_name="Modelo_de_oficio_Afya.docx", 
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+                    use_container_width=True
+                )
+        else:
+            texto_modelo_seguranca = """Ofício n° XXX/2026 AFYAMARABÁ/AFYA/COORD. DE CURSO
+Marabá/PA, XX de mês de 2026.
+
+A/Ao senhor/a (Colocar o pronome adequado)
+Nome da pessoa endereçada.
+Setor do/a responsável.
+Empresa/órgão destinado
+
+Assunto: Objetivo do oficio.
+
+Prezado (a) Senhor (a),
+
+Cumprimentando-o/a cordialmente, a Faculdade de Ciências Médica de Marabá – Afya Marabá, mantida pelo Instituto Paraense de Educação e Cultura LTDA – IPEC, inscrita no CNPJ sob o n° 07.962.437/0001-55, neste ato representado por Nome do Responsável, venho por meio de este documento ..... inserir texto.
+
+Diante do exposto, fique com os votos da mais elevada estima e consideração. 
+
+Cordialmente, 
+_____________________________
+Nome do Responsável
+Cargo do Responsável
+Faculdade de Ciências Médicas de Marabá – Afya Marabá"""
             
-        st.download_button(
-            label="📄 Baixar Modelo Oficial (.DOCX)", 
-            data=dados_modelo, 
-            file_name="Modelo_de_oficio_Afya.docx", 
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
-            use_container_width=True
-        )
+            st.warning("⚠️ O arquivo DOCX original não foi encontrado no sistema. Baixe a versão em texto abaixo.")
+            st.download_button(
+                label="📄 Baixar Modelo Oficial (.TXT)", 
+                data=texto_modelo_seguranca.encode('utf-8'), 
+                file_name="Modelo_de_oficio_Afya.txt", 
+                mime="text/plain", 
+                use_container_width=True
+            )
 
     with col_form:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
