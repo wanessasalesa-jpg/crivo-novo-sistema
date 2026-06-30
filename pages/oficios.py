@@ -58,11 +58,20 @@ with aba_solicitar:
     
     with col_ajuda:
         st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
+        # Lógica blindada para o botão NUNCA sumir
         try:
             with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
-                st.download_button(label="📄 Baixar Modelo Oficial (.DOCX)", data=file, file_name="Modelo de ofício - Afya (oficial).docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+                dados_modelo = file.read()
         except FileNotFoundError:
-            st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
+            dados_modelo = b"O arquivo oficial nao foi encontrado na pasta do servidor. Este e um arquivo de seguranca."
+            
+        st.download_button(
+            label="📄 Baixar Modelo Oficial (.DOCX)", 
+            data=dados_modelo, 
+            file_name="Modelo_de_oficio_Afya.docx", 
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+            use_container_width=True
+        )
 
     with col_form:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
@@ -191,7 +200,7 @@ with aba_acompanhar:
             st.error(f"Protocolo '{st.session_state.protocolo_buscado}' não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO (COM FILTRO POR ANO)
+# ABA 3: ÁREA DA GESTÃO (COM FILTRO FIXO POR ANO)
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -253,8 +262,10 @@ with aba_gestao:
         else:
             st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
             
-        # LÓGICA DE EXTRAÇÃO DE ANOS PARA O FILTRO
-        anos_disponiveis = sorted(list(set([item['data_solicitacao'][6:10] for item in st.session_state.banco_solicitacoes])), reverse=True)
+        # LÓGICA DE ANOS FIXOS PARA O FILTRO
+        ano_atual = datetime.now().year
+        # Gera uma lista do ano atual+2 até 2024 (Ex: 2028, 2027, 2026, 2025, 2024)
+        anos_disponiveis = [str(ano) for ano in range(ano_atual + 2, 2023, -1)]
         opcoes_ano = ["Todos os Anos"] + anos_disponiveis
         
         # INTERFACE DOS FILTROS LADO A LADO
@@ -274,7 +285,7 @@ with aba_gestao:
             lista_exibicao = [item for item in lista_exibicao if item['data_solicitacao'][6:10] == filtro_ano]
             
         if not lista_exibicao:
-            st.info("Nenhuma requisição encontrada para os filtros selecionados.")
+            st.info(f"Nenhum ofício encontrado/emitido para o filtro selecionado ({filtro_ano}).")
         else:
             for item in reversed(lista_exibicao):
                 indice = st.session_state.banco_solicitacoes.index(item)
@@ -318,7 +329,6 @@ with aba_gestao:
                         if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
                             st.session_state.contador_oficio_oficial += 1
                             
-                            # Usa o ano atual para gerar a numeração do ofício
                             ano_atual = datetime.now().year
                             oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{ano_atual}"
                             
