@@ -58,6 +58,8 @@ with aba_solicitar:
     
     with col_ajuda:
         st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
+        
+        # CÓDIGO ORIGINAL RESTAURADO (Com busca dupla para evitar erros de pasta)
         try:
             with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
                 st.download_button(
@@ -68,7 +70,17 @@ with aba_solicitar:
                     use_container_width=True
                 )
         except FileNotFoundError:
-            st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
+            try:
+                with open("../Modelo de ofício - Afya (oficial).docx", "rb") as file:
+                    st.download_button(
+                        label="📄 Baixar Modelo Oficial (.DOCX)", 
+                        data=file, 
+                        file_name="Modelo de ofício - Afya (oficial).docx", 
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+                        use_container_width=True
+                    )
+            except FileNotFoundError:
+                st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
 
     with col_form:
         perfil_solicitante = st.radio("Eu sou:", ["Aluno", "Professor", "Administrativo"], horizontal=True)
@@ -260,7 +272,10 @@ with aba_gestao:
             st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
             
         # LÓGICA DE ANOS FIXOS PARA O FILTRO
-        opcoes_ano = ["Todos os Anos", "2028", "2027", "2026", "2025", "2024"]
+        ano_atual = datetime.now().year
+        # Gera uma lista do ano atual+2 até 2024 (Ex: 2028, 2027, 2026, 2025, 2024)
+        anos_disponiveis = [str(ano) for ano in range(ano_atual + 2, 2023, -1)]
+        opcoes_ano = ["Todos os Anos"] + anos_disponiveis
         
         # INTERFACE DOS FILTROS LADO A LADO
         col_filtro1, col_filtro2 = st.columns(2)
