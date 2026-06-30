@@ -23,6 +23,10 @@ st.markdown("""
     .media-final { font-size: 15px; font-weight: bold; color: #800040; background-color: #f1f1f1; padding: 4px 8px; border-radius: 4px; }
     .zona-segura { background-color: #fafafa; border: 2px dashed #ddd; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
     .box-aluno-1 { background-color: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #3498db; }
+    .box-aluno-2 { background-color: #fcf3cf; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #f1c40f; }
+    .box-aluno-3 { background-color: #e8f8f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #1abc9c; }
+    .box-aluno-4 { background-color: #fdedec; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #e74c3c; }
+    .box-aluno-5 { background-color: #f5eef8; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #9b59b6; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -96,6 +100,26 @@ def is_grupo_concluido(banca):
             if any(a not in ori for a in banca.get("alunos", [])): return False
     return True
 
+# GERADOR DE TEXTO DA ATA MENSAL (ACOMPANHAMENTO)
+def gerar_texto_ata_mensal(banca, mes):
+    cont = banca.get("conteudo_atas", {}).get(mes, {})
+    texto = f"ATA DE REUNIÃO DE ORIENTAÇÃO - {mes.upper()}\n"
+    texto += "=" * 70 + "\n\n"
+    texto += f"Projeto: {banca.get('titulo', 'Sem título')}\n"
+    texto += f"Módulo: {banca['modulo']} | Semestre: {banca.get('semestre', 'N/A')}\n"
+    texto += f"Orientador(a): {banca.get('orientador_nome', 'N/A')}\n"
+    texto += f"Alunos Integrantes:\n"
+    for aluno in banca.get('alunos', []):
+        texto += f" - {aluno}\n"
+    texto += "\n" + "-" * 70 + "\n"
+    texto += f"RESUMO DAS ATIVIDADES DISCUTIDAS:\n{cont.get('resumo', 'Não preenchido')}\n\n"
+    texto += f"ENCAMINHAMENTOS DEFINIDOS:\n{cont.get('encaminha', 'Não preenchido')}\n\n"
+    texto += f"RESPONSABILIDADES (TAREFAS POR ALUNO):\n{cont.get('resp_completo', 'Não preenchido')}\n"
+    texto += "-" * 70 + "\n"
+    texto += f"Documento assinado eletronicamente pelo orientador responsável.\n"
+    texto += f"Gerado pelo Portal CRIVO em {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+    return texto
+
 # GERADOR DE TEXTO DA ATA DE DEFESA
 def gerar_texto_ata_defesa(banca):
     alunos_str = ", ".join(banca.get('alunos', []))
@@ -108,10 +132,18 @@ def gerar_texto_ata_defesa(banca):
     texto += f"desenvolvido no módulo de {banca['modulo']}, intitulado: \"{banca.get('titulo', 'Sem título')}\", de autoria dos discentes: {alunos_str}.\n\n"
     
     texto += "Após a apresentação oral, os(as) discentes foram arguidos(as) pelos membros da banca, que se reuniram reservadamente e deliberaram pela avaliação do trabalho apresentado. "
-    if banca['modulo'] in ["TCC I", "TCC II", "MCM IV"]:
-        texto += "A nota atribuída pela banca avaliadora será posteriormente somada à avaliação do(a) orientador(a), considerando-se tanto a nota do grupo quanto as avaliações individuais dos(as) integrantes, conforme previsto no Regulamento da Afya Faculdade de Ciências Médicas.\n\n"
+    
+    if banca['modulo'] == "MCM V":
+        media = calcular_media_final(banca)
+        if media is not None:
+            status_aprovacao = "APROVADO(A)" if media >= 70 else "REPROVADO(A)"
+            texto += f"A nota atribuída reflete a avaliação clínica global da banca examinadora. A média final consolidada obtida foi {media:.1f} pontos, resultando na menção de {status_aprovacao} do trabalho apresentado.\n\n"
+        else:
+            texto += "A nota atribuída reflete a avaliação clínica global da banca examinadora. (Média Final pendente de lançamentos).\n\n"
+    elif banca['modulo'] in ["TCC I", "TCC II", "MCM IV"]:
+        texto += "A nota atribuída pela banca avaliadora será posteriormente somada à avaliação do(a) orientador(a), considerando-se tanto a nota do grupo quanto as avaliações individuais dos(as) integrantes, conforme previsto no Regulamento da Instituição.\n\n"
     else:
-        texto += "A nota atribuída reflete a avaliação clínica global da banca examinadora.\n\n"
+        texto += "A nota atribuída reflete a avaliação da banca examinadora.\n\n"
         
     texto += "BANCA EXAMINADORA:\n"
     texto += f"- Orientador(a): {banca.get('orientador_nome', 'N/A')}\n"
@@ -467,7 +499,7 @@ def tela_coordenacao():
                         </div>
                         <h4 style='margin-top: 10px; margin-bottom: 5px; color: #333;'>{banca.get('titulo') if banca.get('titulo') else 'Projeto Sem Título'}</h4>
                         <p style='margin: 0; font-size: 14px;'><strong>Orientação:</strong> {ori_str}</p>
-                        <p style='margin: 0; font-size: 14px;'><strong>Avaliadores:</strong> {av_str}</p>
+                        <p style='margin: 0; font-size: 14px;'><strong>Banca:</strong> {av_str}</p>
                         <p style='margin: 8px 0 0 0; font-size: 14px;'><strong>Alunos:</strong> {', '.join(banca.get('alunos', []))}</p>
                     </div>
                     """, unsafe_allow_html=True)
@@ -597,10 +629,16 @@ def tela_coordenacao():
                         st.markdown("---")
                         st.write("**Atas de Reunião Mensal (Orientação):**")
                         col_a1, col_a2, col_a3, col_a4 = st.columns(4)
-                        with col_a1: st.markdown(f"M1: {'✅' if atas.get('Ata Mês 1') else '❌'}"); st.download_button("📥 PDF M1", "Mock PDF", key=f"dm1_{banca['id']}", use_container_width=True)
-                        with col_a2: st.markdown(f"M2: {'✅' if atas.get('Ata Mês 2') else '❌'}"); st.download_button("📥 PDF M2", "Mock PDF", key=f"dm2_{banca['id']}", use_container_width=True)
-                        with col_a3: st.markdown(f"M3: {'✅' if atas.get('Ata Mês 3') else '❌'}"); st.download_button("📥 PDF M3", "Mock PDF", key=f"dm3_{banca['id']}", use_container_width=True)
-                        with col_a4: st.markdown(f"M4: {'✅' if atas.get('Ata Mês 4') else '❌'}"); st.download_button("📥 PDF M4", "Mock PDF", key=f"dm4_{banca['id']}", use_container_width=True)
+                        
+                        txt_m1 = gerar_texto_ata_mensal(banca, "Ata Mês 1") if atas.get('Ata Mês 1') else "Ata não preenchida."
+                        txt_m2 = gerar_texto_ata_mensal(banca, "Ata Mês 2") if atas.get('Ata Mês 2') else "Ata não preenchida."
+                        txt_m3 = gerar_texto_ata_mensal(banca, "Ata Mês 3") if atas.get('Ata Mês 3') else "Ata não preenchida."
+                        txt_m4 = gerar_texto_ata_mensal(banca, "Ata Mês 4") if atas.get('Ata Mês 4') else "Ata não preenchida."
+                        
+                        with col_a1: st.markdown(f"M1: {'✅' if atas.get('Ata Mês 1') else '❌'}"); st.download_button("📥 Baixar Ata (.txt)", txt_m1, key=f"dm1_{banca['id']}", file_name=f"Ata_M1_{banca['id']}.txt", use_container_width=True)
+                        with col_a2: st.markdown(f"M2: {'✅' if atas.get('Ata Mês 2') else '❌'}"); st.download_button("📥 Baixar Ata (.txt)", txt_m2, key=f"dm2_{banca['id']}", file_name=f"Ata_M2_{banca['id']}.txt", use_container_width=True)
+                        with col_a3: st.markdown(f"M3: {'✅' if atas.get('Ata Mês 3') else '❌'}"); st.download_button("📥 Baixar Ata (.txt)", txt_m3, key=f"dm3_{banca['id']}", file_name=f"Ata_M3_{banca['id']}.txt", use_container_width=True)
+                        with col_a4: st.markdown(f"M4: {'✅' if atas.get('Ata Mês 4') else '❌'}"); st.download_button("📥 Baixar Ata (.txt)", txt_m4, key=f"dm4_{banca['id']}", file_name=f"Ata_M4_{banca['id']}.txt", use_container_width=True)
                     
                     st.markdown("---")
                     notas = banca.get("notas_lancadas", {})
@@ -698,32 +736,38 @@ def tela_professor():
                         c1, c2 = st.columns([1, 2])
                         with c1: st.markdown(f"**{mes}**: {'✅ Concluída' if atas.get(mes) else '❌ Pendente'}")
                         with c2:
-                            with st.expander(f"📝 Preencher / Editar {mes}", expanded=False):
-                                if atas.get(mes): st.success(f"✅ {mes} já foi preenchida/enviada. Você pode editá-la abaixo se necessário.")
-                                with st.form(key=f"form_ata_{mes}_{banca['id']}"):
-                                    st.write(f"**Reunião - {mes}**")
-                                    dt_reuniao = st.date_input("Data da Reunião:", format="DD/MM/YYYY")
-                                    resumo = st.text_area("Resumo das atividades discutidas:", value=cont_atas.get(mes, {}).get('resumo', ''))
-                                    encaminha = st.text_area("Encaminhamentos definidos:", value=cont_atas.get(mes, {}).get('encaminha', ''))
-                                    
-                                    st.write("**Responsáveis pelas Tarefas:**")
-                                    alunos_lista = banca.get('alunos', [])
-                                    resp = ""
-                                    for al in alunos_lista:
-                                        safename = "".join([c for c in al if c.isalnum()])
-                                        resp_al = st.text_input(f"Tarefa de {al}:", value=cont_atas.get(mes, {}).get(f'resp_{al}', ''), key=f"ta_{mes}_{safename}_{banca['id']}")
-                                        resp += f"- {al}: {resp_al}\n" if resp_al else ""
+                            with st.expander(f"📝 Preencher {mes}", expanded=False):
+                                if atas.get(mes): 
+                                    st.success(f"✅ {mes} preenchida e assinada eletronicamente. (Apenas visualização)")
+                                    cont = cont_atas.get(mes, {})
+                                    st.write(f"**Resumo:** {cont.get('resumo', '')}")
+                                    st.write(f"**Encaminhamentos:** {cont.get('encaminha', '')}")
+                                    st.write(f"**Responsáveis:**\n{cont.get('resp_completo', '')}")
+                                else:
+                                    with st.form(key=f"form_ata_{mes}_{banca['id']}"):
+                                        st.write(f"**Reunião - {mes}**")
+                                        dt_reuniao = st.date_input("Data da Reunião:", format="DD/MM/YYYY")
+                                        resumo = st.text_area("Resumo das atividades discutidas:")
+                                        encaminha = st.text_area("Encaminhamentos definidos:")
                                         
-                                    prox_dt = st.date_input("Data da próxima reunião:", format="DD/MM/YYYY")
-                                    assinado = st.checkbox("Assinar eletronicamente esta Ata")
-                                    
-                                    if st.form_submit_button("Salvar Ata"):
-                                        if not assinado: st.error("Marque a assinatura eletrônica.")
-                                        else:
-                                            ata_dict = {'resumo': resumo, 'encaminha': encaminha, 'resp_completo': resp}
-                                            st.session_state.bancos_avaliacoes[indice_real]['conteudo_atas'][mes] = ata_dict
-                                            st.session_state.bancos_avaliacoes[indice_real]['atas_mensais'][mes] = True
-                                            recarregar_com_sucesso(f"{mes} salva com sucesso!")
+                                        st.write("**Responsáveis pelas Tarefas:**")
+                                        alunos_lista = banca.get('alunos', [])
+                                        resp = ""
+                                        for al in alunos_lista:
+                                            safename = "".join([c for c in al if c.isalnum()])
+                                            resp_al = st.text_input(f"Tarefa de {al}:", key=f"ta_{mes}_{safename}_{banca['id']}")
+                                            resp += f"- {al}: {resp_al}\n" if resp_al else ""
+                                            
+                                        prox_dt = st.date_input("Data da próxima reunião:", format="DD/MM/YYYY")
+                                        assinado = st.checkbox("Assinar eletronicamente esta Ata")
+                                        
+                                        if st.form_submit_button("Salvar Ata"):
+                                            if not assinado: st.error("Marque a assinatura eletrônica.")
+                                            else:
+                                                ata_dict = {'resumo': resumo, 'encaminha': encaminha, 'resp_completo': resp}
+                                                st.session_state.bancos_avaliacoes[indice_real]['conteudo_atas'][mes] = ata_dict
+                                                st.session_state.bancos_avaliacoes[indice_real]['atas_mensais'][mes] = True
+                                                recarregar_com_sucesso(f"{mes} salva com sucesso!")
 
                 if banca['modulo'] not in ["MCM V", "PIEPE"]:
                     st.markdown("---")
@@ -999,7 +1043,11 @@ def tela_professor():
 # ==========================================
 # ROTEADOR DE TELAS
 # ==========================================
-if st.session_state.usuario_bancas is None: tela_login()
-elif st.session_state.usuario_bancas["perfil"] == "Administrador": tela_administracao()
-elif st.session_state.usuario_bancas["perfil"] == "Coordenação": tela_coordenacao()
-elif st.session_state.usuario_bancas["perfil"] == "Professor": tela_professor()
+if st.session_state.usuario_bancas is None:
+    tela_login()
+elif st.session_state.usuario_bancas["perfil"] == "Administrador":
+    tela_administracao()
+elif st.session_state.usuario_bancas["perfil"] == "Coordenação":
+    tela_coordenacao()
+elif st.session_state.usuario_bancas["perfil"] == "Professor":
+    tela_professor()
