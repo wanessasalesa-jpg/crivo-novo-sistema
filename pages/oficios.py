@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Portal de Ofícios - CRIVO", page_icon="📄", layout="wide")
+
 # 2. DESIGN CUSTOMIZADO (CSS)
 st.markdown("""
     <style>
@@ -41,7 +42,7 @@ if "gestor_logado" not in st.session_state:
 if "protocolo_buscado" not in st.session_state:
     st.session_state.protocolo_buscado = ""
 
-# CABEÇALHO PÚBLICO - COM O NOVO TÍTULO!
+# CABEÇALHO PÚBLICO
 st.markdown("<h2 class='titulo-principal'>📄 Portal de Emissão de Ofícios</h2>", unsafe_allow_html=True)
 st.write("Sistema automatizado de requisição e emissão de numeração sequencial.")
 st.markdown("---")
@@ -58,8 +59,8 @@ with aba_solicitar:
     with col_ajuda:
         st.info("Baixe o modelo oficial, preencha seus dados e anexe ao lado para avaliação. O prazo de devolutiva é de 3 dias.")
         try:
-            with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
-                st.download_button(label="📄 Baixar Modelo Oficial (.DOCX)", data=file, file_name="Modelo de ofício - Afya (oficial).docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+            with open("Modelo de ofício - Afya (oficial).docx", "rb") as file:
+                st.download_button(label="📄 Baixar Modelo Oficial (.DOCX)", data=file, file_name="Modelo de ofício - Afya (oficial).docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
         except FileNotFoundError:
             st.warning("⚠️ Arquivo modelo não encontrado no servidor.")
 
@@ -136,7 +137,6 @@ with aba_acompanhar:
     with st.form("form_busca", clear_on_submit=True):
         col1, col2 = st.columns([3, 1])
         with col1:
-            # Texto explicativo melhorado para indicar que não importa a letra maiúscula/minúscula
             codigo_busca = st.text_input("Digite o número do seu Protocolo (Ex: REQ-1234 ou req-1234):")
         with col2:
             st.write("")
@@ -144,7 +144,6 @@ with aba_acompanhar:
             submit_busca = st.form_submit_button("Buscar Protocolo")
             
         if submit_busca:
-            # INTELIGÊNCIA APLICADA: .strip() remove espaços vazios acidentais e .upper() joga tudo pra maiúsculo!
             st.session_state.protocolo_buscado = codigo_busca.strip().upper()
             
     if st.session_state.protocolo_buscado:
@@ -192,7 +191,7 @@ with aba_acompanhar:
             st.error(f"Protocolo '{st.session_state.protocolo_buscado}' não encontrado. Verifique se digitou corretamente.")
 
 # ==========================================
-# ABA 3: ÁREA DA GESTÃO (COM EXCEL INTELIGENTE)
+# ABA 3: ÁREA DA GESTÃO (COM FILTRO POR ANO)
 # ==========================================
 with aba_gestao:
     if not st.session_state.gestor_logado:
@@ -253,15 +252,29 @@ with aba_gestao:
             st.warning(f"🚨 **Atenção:** Você tem **{qtd_pendentes} ofício(s)** pendente(s) aguardando sua análise e liberação.")
         else:
             st.success("🎉 **Excelente!** Não há ofícios pendentes na sua fila de análise no momento.")
-                
-        filtro = st.radio("Filtrar visualização:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
+            
+        # LÓGICA DE EXTRAÇÃO DE ANOS PARA O FILTRO
+        anos_disponiveis = sorted(list(set([item['data_solicitacao'][6:10] for item in st.session_state.banco_solicitacoes])), reverse=True)
+        opcoes_ano = ["Todos os Anos"] + anos_disponiveis
         
+        # INTERFACE DOS FILTROS LADO A LADO
+        col_filtro1, col_filtro2 = st.columns(2)
+        with col_filtro1:
+            filtro_status = st.radio("Status do Ofício:", ["Apenas Pendentes", "Todos os Protocolos"], horizontal=True)
+        with col_filtro2:
+            filtro_ano = st.selectbox("Filtrar por Ano Letivo:", opcoes_ano)
+        
+        # APLICAÇÃO DOS FILTROS
         lista_exibicao = st.session_state.banco_solicitacoes
-        if filtro == "Apenas Pendentes":
+        
+        if filtro_status == "Apenas Pendentes":
             lista_exibicao = [item for item in lista_exibicao if item["status"] == "Pendente"]
             
-        if not lista_exibicao and filtro == "Apenas Pendentes":
-            st.info("Nenhuma requisição aguardando análise no momento.")
+        if filtro_ano != "Todos os Anos":
+            lista_exibicao = [item for item in lista_exibicao if item['data_solicitacao'][6:10] == filtro_ano]
+            
+        if not lista_exibicao:
+            st.info("Nenhuma requisição encontrada para os filtros selecionados.")
         else:
             for item in reversed(lista_exibicao):
                 indice = st.session_state.banco_solicitacoes.index(item)
@@ -284,6 +297,7 @@ with aba_gestao:
                     <strong>Setor:</strong> {item.get('setor', 'Não informado')}<br>
                     <strong>Assunto:</strong> {item['assunto']}<br>
                     <strong>Destinatário Final:</strong> {item['destinatario']}<br>
+                    <strong>Data da Solicitação:</strong> {item['data_solicitacao']}<br>
                     <div style='margin-top: 10px;'>
                         <strong>Status:</strong> {item['status']} | <strong>Ofício Gerado:</strong> <span style='color: #002147; font-weight: bold;'>{item['numero_oficio']}</span>
                     </div>
@@ -304,7 +318,9 @@ with aba_gestao:
                         if st.button("✅ Aprovar e Gerar Número Oficial", key=f"aprova_{item['id']}"):
                             st.session_state.contador_oficio_oficial += 1
                             
-                            oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{datetime.now().year}"
+                            # Usa o ano atual para gerar a numeração do ofício
+                            ano_atual = datetime.now().year
+                            oficio_gerado = f"Ofício nº {st.session_state.contador_oficio_oficial:03d}/{ano_atual}"
                             
                             st.session_state.banco_solicitacoes[indice]["status"] = "Aprovado"
                             st.session_state.banco_solicitacoes[indice]["numero_oficio"] = oficio_gerado
